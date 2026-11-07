@@ -1,0 +1,25 @@
+[project]
+name = "hole-cam"
+version = "0.1.0"
+description = "STEP part in, checked drilling G-code out."
+authors = [
+    { name = "Ryan Rhodes", email = "ryan@ryanrhodes.io" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "cadquery>=2.8.0",
+    # Last releases with Intel Mac wheels; newer ones only ship arm64 builds for macOS.
+    "casadi<=3.7.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "llvmlite<=0.45.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "nlopt==2.9.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "numba<=0.62.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

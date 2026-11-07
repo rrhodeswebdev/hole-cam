@@ -1,0 +1,39 @@
+{
+  "part": "plate_4_through",
+  "units": "mm",
+  "holes": [
+    {
+      "x": 15,
+      "y": 15,
+      "diameter": 6.8,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    },
+    {
+      "x": 85,
+      "y": 15,
+      "diameter": 6.8,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    },
+    {
+      "x": 15,
+      "y": 45,
+      "diameter": 6.8,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    },
+    {
+      "x": 85,
+      "y": 45,
+      "diameter": 6.8,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    }
+  ],
+  "skipped": []
+}

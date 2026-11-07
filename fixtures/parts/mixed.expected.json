@@ -1,0 +1,39 @@
+{
+  "part": "mixed",
+  "units": "mm",
+  "holes": [
+    {
+      "x": 15,
+      "y": 15,
+      "diameter": 6.8,
+      "depth": 25,
+      "through": true,
+      "top_z": 25
+    },
+    {
+      "x": 85,
+      "y": 15,
+      "diameter": 6.8,
+      "depth": 25,
+      "through": true,
+      "top_z": 25
+    },
+    {
+      "x": 35,
+      "y": 45,
+      "diameter": 5,
+      "depth": 5,
+      "through": false,
+      "top_z": 25
+    },
+    {
+      "x": 65,
+      "y": 45,
+      "diameter": 5,
+      "depth": 20,
+      "through": false,
+      "top_z": 25
+    }
+  ],
+  "skipped": []
+}

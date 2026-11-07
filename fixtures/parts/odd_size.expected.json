@@ -1,0 +1,23 @@
+{
+  "part": "odd_size",
+  "units": "mm",
+  "holes": [
+    {
+      "x": 20,
+      "y": 20,
+      "diameter": 7.1,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    },
+    {
+      "x": 40,
+      "y": 20,
+      "diameter": 6.8,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    }
+  ],
+  "skipped": []
+}

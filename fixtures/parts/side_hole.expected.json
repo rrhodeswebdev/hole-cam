@@ -1,0 +1,20 @@
+{
+  "part": "side_hole",
+  "units": "mm",
+  "holes": [
+    {
+      "x": 20,
+      "y": 20,
+      "diameter": 5,
+      "depth": 30,
+      "through": true,
+      "top_z": 30
+    }
+  ],
+  "skipped": [
+    {
+      "diameter": 6,
+      "axis": "X"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "part": "boss",
+  "units": "mm",
+  "holes": [
+    {
+      "x": 10,
+      "y": 10,
+      "diameter": 5,
+      "depth": 10,
+      "through": true,
+      "top_z": 10
+    },
+    {
+      "x": 40,
+      "y": 25,
+      "diameter": 5,
+      "depth": 8,
+      "through": false,
+      "top_z": 20
+    }
+  ],
+  "skipped": []
+}
