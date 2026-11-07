@@ -78,16 +78,16 @@ Needs Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20+, and an Anthro
 ```bash
 uv sync
 (cd web && npm install && npm run build)
-export ANTHROPIC_API_KEY=...
-uv run uvicorn hole_cam.api:app       # open http://127.0.0.1:8000
+cp .env.example .env                  # then put your key in .env (it's git-ignored)
+uv run --env-file .env uvicorn hole_cam.api:app       # open http://127.0.0.1:8000
 ```
 
-For development, run the API with `--reload` and `npm run dev` in `web/`.
+For development, add `--reload` to the API command and run `npm run dev` in `web/`.
 
 Command-line versions of each step:
 
 ```bash
-uv run python -m hole_cam.planner fixtures/parts/mixed.step 6061 > plan.json
+uv run --env-file .env python -m hole_cam.planner fixtures/parts/mixed.step 6061 > plan.json
 uv run python -m hole_cam.gcode   fixtures/parts/mixed.step plan.json 6061 > mixed.nc
 uv run python -m hole_cam.checks  mixed.nc fixtures/parts/mixed.step
 ```
