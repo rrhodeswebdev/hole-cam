@@ -35,8 +35,9 @@ def context_for(found):
     }
 
 
-def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0):
-    """Return findings as [{line, check, message}]. bottom_z enables the too-deep check."""
+def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0, trace=None):
+    """Return findings as [{line, check, message}]. bottom_z enables the too-deep check.
+    Pass a list as trace to collect every move as {tool, kind: rapid|feed, from, to} for the preview."""
     local_tops = {(round(x, 3), round(y, 3)): z for (x, y), z in (local_tops or {}).items()}
     findings = []
 
@@ -61,6 +62,10 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
         if tool is not None and offset is None and not offset_missing_flagged:
             flag(n, "no-tool-length-offset", f"T{tool} moves in Z with no G43 H{tool} after the tool change.")
             offset_missing_flagged = True
+
+    def move(kind, a, b):
+        if trace is not None and a != b and all(v is not None and math.isfinite(v) for v in (*a, *b)):
+            trace.append({"tool": tool, "kind": kind, "from": list(a), "to": list(b)})
 
     def deep(n, target):
         if bottom_z is not None and target < bottom_z - max_breakthrough:
@@ -130,8 +135,12 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
             if cycle_r < top_at(nx, ny):
                 flag(n, "rapid-into-part", f"R{cycle_r:g} is below the surface at X{nx:g} Y{ny:g} (Z{top_at(nx, ny):g}); the rapid to R hits the part.")
             deep(n, cycle_z)
-            x, y = nx, ny
-            z = initial_z if retract_to_initial else cycle_r
+            back = initial_z if retract_to_initial else cycle_r
+            move("rapid", (x, y, z), (nx, ny, z))
+            move("rapid", (nx, ny, z), (nx, ny, cycle_r))
+            move("feed", (nx, ny, cycle_r), (nx, ny, cycle_z))
+            move("rapid", (nx, ny, cycle_z), (nx, ny, back))
+            x, y, z = nx, ny, back
         elif {"X", "Y", "Z"} & val.keys():
             nx, ny, nz = target("X", x), target("Y", y), target("Z", z)
             if nz != z:
@@ -146,6 +155,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
                 if not spindle:
                     flag(n, "spindle-off-cut", f"G0{motion} feed move with the spindle stopped; add M03.")
                 deep(n, nz)
+            move("rapid" if motion == 0 else "feed", (x, y, z), (nx, ny, nz))
             x, y, z = nx, ny, nz
 
         if 5 in m: spindle = False

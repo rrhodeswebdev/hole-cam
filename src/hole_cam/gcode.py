@@ -9,6 +9,7 @@ CLI: uv run python -m hole_cam.gcode PART.step PLAN.json MATERIAL > out.nc
 
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -21,7 +22,9 @@ def generate(found, plan, tools, material, machine, name="PART"):
     z0 = found["part"]["top_z"]
     clear, r_clear = machine["clearance"], machine["r_clearance"]
 
-    out = ["%", f"O1000 ({name.upper()})", "G21 G90 G17 G40 G49 G80", "G54"]
+    # The name can come from an uploaded file; parentheses or newlines would end the comment and inject code.
+    safe_name = re.sub(r"[^A-Z0-9 _.-]", "", name.upper())[:30]
+    out = ["%", f"O1000 ({safe_name})", "G21 G90 G17 G40 G49 G80", "G54"]
     for op in plan["operations"]:
         tool = tools[op["tool_id"]]
         if tool["type"] == "spot_drill":

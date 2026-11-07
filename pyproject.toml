@@ -11,9 +11,12 @@ dependencies = [
     "cadquery>=2.8.0",
     # Last releases with Intel Mac wheels; newer ones only ship arm64 builds for macOS.
     "casadi<=3.7.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "fastapi>=0.162.2",
     "llvmlite<=0.45.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "nlopt==2.9.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "numba<=0.62.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "python-multipart>=0.0.33",
+    "uvicorn>=0.54.0",
 ]
 
 [build-system]
@@ -22,6 +25,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.2.0",
 ]
 
