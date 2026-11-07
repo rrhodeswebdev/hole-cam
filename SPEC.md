@@ -76,7 +76,7 @@ material + tool library + machine limits ────────┤
 **Fallback if this eats Saturday:** let the user type the hole list in a form, and keep going. Planning, G-code, checks and preview matter most in the demo.
 
 ### 3.2 Plan the job (Claude)
-- Model: `claude-sonnet-5-5` (cheap and fast for structured planning; switch to `claude-opus-5-5` if quality isn't good enough).
+- Model: `claude-opus-5-5` at effort `medium`, with the server-side refusal fallback on. Try `claude-sonnet-5-5` if cost matters; the validator will show whether quality holds.
 - Input: the hole list, the material, the tool library (JSON), the machine limits.
 - Output: JSON against a fixed schema (use tool use / structured output, not free text):
   ```json

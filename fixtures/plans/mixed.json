@@ -3,6 +3,6 @@
     {"op": "spot_drill", "tool_id": "SPOT-90-10", "hole_ids": [1, 2, 3, 4], "depth": 1.5, "reason": "Spot every hole so the drills start on center."},
     {"op": "drill", "tool_id": "DRL-5.0", "hole_ids": [3], "cycle": "G81", "reason": "5 mm deep is 1xD, no pecking needed."},
     {"op": "drill", "tool_id": "DRL-5.0", "hole_ids": [4], "cycle": "G83", "peck": 5.0, "reason": "20 mm deep is 4xD, peck to clear chips."},
-    {"op": "drill", "tool_id": "DRL-6.8", "hole_ids": [1, 2], "cycle": "G81", "reason": "25 mm through is under 4xD in aluminum; plain drilling with breakthrough."}
+    {"op": "drill", "tool_id": "DRL-6.8", "hole_ids": [1, 2], "cycle": "G83", "reason": "25 mm through is 3.7xD, past the 3xD limit; peck to clear chips.", "peck": 6.8}
   ]
 }
