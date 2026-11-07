@@ -43,24 +43,18 @@ Not covered (say so if asked): MES / shop-floor data, the edge-to-cloud link to 
 
 ## 3. How it works
 
-```
-STEP file ──▶ 1. Find holes (CadQuery) ──▶ list of holes (JSON)
-                                                 │
-material + tool library + machine limits ────────┤
-                                                 ▼
-                                2. Plan the job (Claude, structured output)
-                                                 │
-                                                 ▼
-                                3. Validate the plan (plain code) ── reject ──▶ show errors
-                                                 │ ok
-                                                 ▼
-                                4. Write G-code (plain code, templates)
-                                                 │
-                                                 ▼
-                                5. Safety checks on the G-code ── fail ──▶ block export, explain
-                                                 │ pass
-                                                 ▼
-                                6. Preview (three.js) + download .nc
+```mermaid
+flowchart TD
+    step[STEP file] --> find["1 · Find holes (CadQuery)"]
+    find --> holes[/"list of holes (JSON)"/]
+    holes --> plan["2 · Plan the job (Claude, structured output)"]
+    inputs[/"material + tool library + machine limits"/] --> plan
+    plan --> validate{"3 · Validate the plan (plain code)"}
+    validate -->|reject| errors[Show errors]
+    validate -->|ok| gcode["4 · Write G-code (plain code, templates)"]
+    gcode --> safety{"5 · Safety checks on the G-code"}
+    safety -->|fail| blocked[Block export, explain]
+    safety -->|pass| preview["6 · Preview (three.js) + download .nc"]
 ```
 
 ### 3.1 Find holes (CadQuery / OpenCascade)

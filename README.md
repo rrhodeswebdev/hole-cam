@@ -15,10 +15,17 @@ So the goal isn't just "generate G-code fast". It's to generate it fast **and** 
 
 ## What it does
 
-```
-STEP file ──▶ find holes (CadQuery) ──▶ plan (Claude) ──▶ validate plan ──▶ write G-code ──▶ safety checks ──▶ preview + download
-                                              ▲                │ rejected
-                                              └── one retry ◀──┘
+```mermaid
+flowchart LR
+    step[STEP file] --> find["1 · Find holes"]
+    find --> plan["2 · Plan<br/>Claude"]
+    plan --> validate{"3 · Validate"}
+    validate -->|rejected: retry once| plan
+    validate -->|rejected twice| errors["Show errors,<br/>no program"]
+    validate -->|ok| gcode["4 · Write G-code"]
+    gcode --> safety{"5 · Safety checks"}
+    safety -->|pass| preview["6 · Preview<br/>+ download"]
+    safety -->|fail| blocked["Show problems,<br/>download blocked"]
 ```
 
 1. **Find holes:** reads the STEP geometry and finds inner cylindrical faces, merging the split halves many CAD exporters produce. It tells through holes from blind holes by what closes the bottom (the part's underside, a flat floor or a drill point). Holes it can't drill in one top-side setup are reported as skipped, with a reason.
@@ -107,6 +114,9 @@ On Intel Macs, a few CadQuery dependencies are pinned to their last releases wit
 | `web/` | React and three.js front end |
 | `data/` | Tool library, materials, machine limits |
 | `fixtures/` | Test parts, plans, reference program, bad G-code set |
+| `docs/HOW-IT-WORKS.md` | What each stage does and why |
+| `docs/AI-IN-HOLE-CAM.md` | How Claude is used: prompt, schema, safeguards, measured cost |
+| `docs/MANUFACTURING-PRIMER.md` | Machining terms explained for non-machinists |
 | `SPEC.md` | The original weekend spec |
 
 Built with Claude Code as a pair programmer. Every step has its own tests, and the numbers above come from running them.
