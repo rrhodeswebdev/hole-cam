@@ -60,7 +60,11 @@ def plan_schema(tools):
 def plan_job(found, material, tools, machine, client=None):
     """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors}."""
     client = client or anthropic.Anthropic()
-    job = {"material": material["name"], "holes": found["holes"], "skipped": found["skipped"],
+    # Give hole heights in program coordinates (G54 Z0 = part top) so they match the machine note;
+    # model coordinates made Claude warn that every depth would be off.
+    z0 = found["part"]["top_z"]
+    holes = [{**h, "top_z": round(h["top_z"] - z0, 3)} for h in found["holes"]]
+    job = {"material": material["name"], "holes": holes, "skipped": found["skipped"],
            "tools": tools, "machine": machine}
     messages = [{"role": "user", "content": "Plan this job:\n" + json.dumps(job, indent=1)}]
 

@@ -86,6 +86,14 @@ def test_rejected_plan_is_retried_once_with_the_errors():
     assert client.calls[0]["model"] == "claude-opus-5-5"
 
 
+def test_prompt_gives_hole_heights_in_program_coordinates():
+    client = FakeClient(GOOD)
+    plan_job(MIXED, MATERIALS["6061"], TOOLS, MACHINE, client=client)
+    job = json.loads(client.calls[0]["messages"][0]["content"].split("\n", 1)[1])
+    assert {h["top_z"] for h in job["holes"]} == {0}  # model Z25 is the part top, so program Z0
+    assert MIXED["holes"][0]["top_z"] == 25  # the caller's data is not modified
+
+
 def test_gives_up_after_one_retry_and_returns_the_errors():
     bad = copy.deepcopy(GOOD)
     op(bad, 2)["cycle"] = "G81"
