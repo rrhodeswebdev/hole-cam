@@ -1,0 +1,7 @@
+{
+  "operations": [
+    {"op": "spot_drill", "tool_id": "SPOT-90-10", "hole_ids": [1, 2], "depth": 1.5, "cycle": "G81", "peck": 0, "reason": "Spot both holes so the drill starts on center."},
+    {"op": "drill", "tool_id": "DRL-5.0", "hole_ids": [1, 2], "depth": 0, "cycle": "G81", "peck": 0, "reason": "Both holes are 2xD or less; plain drilling."}
+  ],
+  "warnings": []
+}
