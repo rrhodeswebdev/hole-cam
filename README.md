@@ -5,8 +5,7 @@ Upload a STEP part and get back a checked drilling program. Claude plans the job
 It's a weekend-sized version of the "engineering model → machining strategy → G-code" problem: holes only, one setup, a 3-axis mill.
 
 ![Hole-CAM showing a plate with four holes, the drilling plan and the 3D toolpath](docs/screenshot.png)
-<sub>The plan in this screenshot is the hand-written test plan, not Claude's.</sub>
-<!-- TODO: replace with a screenshot from a live Claude run -->
+<sub>A live run on the mixed test plate: the plan and its reasons are Claude's.</sub>
 
 ## The user and the problem
 
@@ -50,10 +49,10 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
-- **The web page** was driven in a real browser (light mode, dark mode and phone width) with the planner faked.
+- **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
+- **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked.
 
 **Not verified yet:**
-- [ ] A live Claude run end to end <!-- TODO -->
 - [ ] A STEP file exported from real CAD software
 - [ ] The programs proven out on a machine or in a simulator (NCViewer / CAMotics)
 - [ ] Speeds and feeds checked against a drill maker's chart. Today they're conservative starting values.
