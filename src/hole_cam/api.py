@@ -9,6 +9,7 @@ from pathlib import Path
 import anthropic
 import cadquery as cq
 from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 
 from hole_cam.checks import check, context_for
 from hole_cam.gcode import _load, generate
@@ -16,6 +17,7 @@ from hole_cam.holes import find_holes
 from hole_cam.planner import plan_job
 
 MAX_UPLOAD = 20 * 1024 * 1024  # bytes
+WEB = Path(__file__).parents[2] / "web" / "dist"
 TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
 
 app = FastAPI(title="Hole-CAM")
@@ -52,7 +54,8 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
             raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
 
     job = {**found, "mesh": mesh, "plan": None, "plan_errors": [], "plan_notes": [],
-           "gcode": None, "findings": [], "toolpath": [], "export_ok": False}
+           "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
+           "tool_numbers": {t["id"]: t["number"] for t in TOOLS}}
     if not found["holes"]:
         job["plan_errors"] = ["No holes that can be drilled from the top were found."]
         return job
@@ -75,6 +78,10 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
     job.update(gcode=gcode, findings=check(gcode, MACHINE, **context_for(found), trace=trace), toolpath=trace)
     job["export_ok"] = not job["findings"]
     return job
+
+
+if WEB.is_dir():  # built UI (cd web && npm run build); mounted last so the API routes win
+    app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 
 
 def _mesh(path, top_z):
