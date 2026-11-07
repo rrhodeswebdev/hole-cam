@@ -14,7 +14,11 @@
   "skipped": [
     {
       "diameter": 6,
-      "axis": "X"
+      "reason": "not vertical"
+    },
+    {
+      "diameter": 4,
+      "reason": "opens on the bottom"
     }
   ]
 }

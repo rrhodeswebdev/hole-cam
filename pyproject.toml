@@ -23,3 +23,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+# SWIG bindings in OCP (CadQuery) emit these on import; not ours to fix.
+filterwarnings = ["ignore:builtin type .* has no __module__ attribute:DeprecationWarning"]
