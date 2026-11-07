@@ -1,0 +1,10 @@
+{
+  "_note": "Generic 3-axis vertical mill, Fanuc-style control. Distances in mm, work offset G54 Z0 on top of the part.",
+  "name": "Generic VMC",
+  "max_rpm": 10000,
+  "max_feed": 10000,
+  "clearance": 25.0,
+  "r_clearance": 2.0,
+  "breakthrough": 1.0,
+  "peck_ratio": 3.0
+}

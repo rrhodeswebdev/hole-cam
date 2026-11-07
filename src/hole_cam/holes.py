@@ -52,7 +52,8 @@ def find_holes(step_path):
     holes.sort(key=lambda h: (h["y"], h["x"], -h["top_z"]))
     for i, h in enumerate(holes, 1):
         h["id"] = i
-    return {"holes": holes, "skipped": skipped}
+    bb = shape.BoundingBox()
+    return {"part": {"top_z": round(bb.zmax, 3), "bottom_z": round(bb.zmin, 3)}, "holes": holes, "skipped": skipped}
 
 
 def _merge(spans):

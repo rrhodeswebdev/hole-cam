@@ -1,0 +1,14 @@
+[
+  {"id": "SPOT-90-10", "number": 1, "type": "spot_drill", "diameter": 10.0, "point_angle": 90, "flute_length": 20, "description": "SPOT DRILL 10MM 90DEG"},
+  {"id": "DRL-3.0", "number": 2, "type": "drill", "diameter": 3.0, "point_angle": 118, "flute_length": 33, "description": "DRILL 3.0MM"},
+  {"id": "DRL-3.3", "number": 3, "type": "drill", "diameter": 3.3, "point_angle": 118, "flute_length": 36, "description": "DRILL 3.3MM M4 TAP DRILL"},
+  {"id": "DRL-4.0", "number": 4, "type": "drill", "diameter": 4.0, "point_angle": 118, "flute_length": 43, "description": "DRILL 4.0MM"},
+  {"id": "DRL-4.2", "number": 5, "type": "drill", "diameter": 4.2, "point_angle": 118, "flute_length": 43, "description": "DRILL 4.2MM M5 TAP DRILL"},
+  {"id": "DRL-5.0", "number": 6, "type": "drill", "diameter": 5.0, "point_angle": 118, "flute_length": 52, "description": "DRILL 5.0MM M6 TAP DRILL"},
+  {"id": "DRL-6.0", "number": 7, "type": "drill", "diameter": 6.0, "point_angle": 118, "flute_length": 57, "description": "DRILL 6.0MM"},
+  {"id": "DRL-6.8", "number": 8, "type": "drill", "diameter": 6.8, "point_angle": 118, "flute_length": 69, "description": "DRILL 6.8MM M8 TAP DRILL"},
+  {"id": "DRL-8.0", "number": 9, "type": "drill", "diameter": 8.0, "point_angle": 118, "flute_length": 75, "description": "DRILL 8.0MM"},
+  {"id": "DRL-8.5", "number": 10, "type": "drill", "diameter": 8.5, "point_angle": 118, "flute_length": 75, "description": "DRILL 8.5MM M10 TAP DRILL"},
+  {"id": "DRL-10.0", "number": 11, "type": "drill", "diameter": 10.0, "point_angle": 118, "flute_length": 87, "description": "DRILL 10.0MM"},
+  {"id": "DRL-10.2", "number": 12, "type": "drill", "diameter": 10.2, "point_angle": 118, "flute_length": 87, "description": "DRILL 10.2MM M12 TAP DRILL"}
+]
