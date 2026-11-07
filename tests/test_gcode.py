@@ -15,6 +15,8 @@ def test_mixed_part_matches_hand_checked_program():
     plan = json.loads((FIX / "plans/mixed.json").read_text())
     nc = generate(find_holes(FIX / "parts/mixed.step"), plan, TOOLS, MATERIALS["6061"], MACHINE, name="mixed")
     assert nc == (FIX / "programs/mixed_6061.nc").read_text()
+    # The plan uses the 5 mm drill twice in a row (G81, then G83); it is loaded once, with one trip home.
+    assert nc.count("T6 M06") == 1 and nc.count("G28") == 3
 
 
 def test_hole_on_a_lower_face_is_offset_from_part_top():

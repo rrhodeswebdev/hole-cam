@@ -53,7 +53,7 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
         except Exception:
             raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
 
-    job = {**found, "mesh": mesh, "plan": None, "plan_errors": [], "plan_notes": [],
+    job = {**found, "mesh": mesh, "plan": None, "plan_errors": [],
            "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
            "tool_numbers": {t["id"]: t["number"] for t in TOOLS}}
     if not found["holes"]:
@@ -69,7 +69,7 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
         if "authentication" not in str(e):
             raise
         raise HTTPException(503, "Claude API credentials aren't set up on the server. Set ANTHROPIC_API_KEY.")
-    job.update(plan=result["plan"], plan_errors=result["errors"], plan_notes=result["notes"])
+    job.update(plan=result["plan"], plan_errors=result["errors"])
     if result["errors"]:
         return job
 

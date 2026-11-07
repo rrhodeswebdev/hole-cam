@@ -58,7 +58,7 @@ def plan_schema(tools):
 
 
 def plan_job(found, material, tools, machine, client=None):
-    """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors, notes}."""
+    """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors}."""
     client = client or anthropic.Anthropic()
     job = {"material": material["name"], "holes": found["holes"], "skipped": found["skipped"],
            "tools": tools, "machine": machine}
@@ -87,11 +87,11 @@ def plan_job(found, material, tools, machine, client=None):
 
 
 def validate(plan, found, tools, machine):
-    """Hard errors block G-code generation; notes are worth showing but are safe."""
+    """Return {"errors": [...]}; any error blocks G-code generation."""
     holes = {h["id"]: h for h in found["holes"]}
     lib = {t["id"]: t for t in tools}
-    errors, notes = [], []
-    spotted, drilled, prev_tool = set(), {}, None
+    errors = []
+    spotted, drilled = set(), {}
 
     for n, op in enumerate(plan["operations"], 1):
         tool = lib.get(op["tool_id"])
@@ -102,10 +102,6 @@ def validate(plan, found, tools, machine):
         if tool["type"] != op["op"]:
             errors.append(f"{where}: a {tool['type']} can't do a {op['op']} operation")
             continue
-        if op["tool_id"] == prev_tool:
-            notes.append(f"{where}: same tool as the operation before; merging them saves a tool change")
-        prev_tool = op["tool_id"]
-
         for hid in op["hole_ids"]:
             h = holes.get(hid)
             if h is None:
@@ -136,7 +132,7 @@ def validate(plan, found, tools, machine):
     for hid, h in holes.items():
         if hid not in drilled and any(abs(t["diameter"] - h["diameter"]) <= DIAMETER_TOL for t in drills):
             errors.append(f"hole {hid} ({h['diameter']} mm) is not drilled, but the library has a drill for it")
-    return {"errors": errors, "notes": notes}
+    return {"errors": errors}
 
 
 if __name__ == "__main__":
@@ -145,6 +141,6 @@ if __name__ == "__main__":
     step, mat = sys.argv[1:3]
     result = plan_job(find_holes(step), _load("materials.json")[mat], _load("tools.json"), _load("machine.json"))
     json.dump(result["plan"], sys.stdout, indent=2)
-    for line in result["errors"] + result["notes"] + result["plan"]["warnings"]:
+    for line in result["errors"] + result["plan"]["warnings"]:
         print(line, file=sys.stderr)
     sys.exit(1 if result["errors"] else 0)

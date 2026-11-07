@@ -92,7 +92,7 @@ export default function App() {
 }
 
 function Results({ job, onDownload }) {
-  const { holes, skipped, plan, plan_errors, plan_notes, gcode, findings, export_ok, tool_numbers } = job
+  const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers } = job
   return (
     <>
       <section className="card">
@@ -126,7 +126,7 @@ function Results({ job, onDownload }) {
               )
             })}
           </ol>
-          {[...(plan.warnings ?? []), ...plan_notes].map((w, i) => <p key={i} className="note small">{w}</p>)}
+          {(plan.warnings ?? []).map((w, i) => <p key={i} className="note small">{w}</p>)}
         </section>
       )}
 

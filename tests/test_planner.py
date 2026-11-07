@@ -25,10 +25,8 @@ def broken(change):
     return validate(plan, MIXED, TOOLS, MACHINE)["errors"]
 
 
-def test_hand_plan_is_valid_with_one_note():
-    result = validate(GOOD, MIXED, TOOLS, MACHINE)
-    assert result["errors"] == []
-    assert len(result["notes"]) == 1 and "same tool" in result["notes"][0]
+def test_hand_plan_is_valid():
+    assert validate(GOOD, MIXED, TOOLS, MACHINE) == {"errors": []}
 
 
 @pytest.mark.parametrize("change, expect", [
