@@ -92,7 +92,9 @@ The people involved:
 | **Drill point** | The cone-shaped tip of a drill, usually 118°. A drilled blind hole has a cone at its bottom, and the drill must go a little deeper than the hole's stated depth so the full diameter reaches it. |
 | **Breakthrough** | Extra depth on a through hole so the drill's point fully exits the bottom and leaves a clean full-size hole |
 | **Threaded (tapped) hole** | A hole with screw threads cut inside. It's made by drilling a smaller hole first, then cutting threads with a **tap**. |
-| **Thread size** (M6, M8) | Metric thread notation. M8 is an 8 mm screw thread. |
+| **Thread size** (M6, M8) | Metric thread notation. M8 is an 8 mm screw thread. `M8x1.25` adds the **pitch**: the thread advances 1.25 mm per turn. |
+| **Inch threads** (1/4-20, 10-24) | Size, then threads per inch. 1/4-20 is a 1/4" thread with 20 turns per inch, so a pitch of 1.27 mm. #10 is a numbered size, 0.190". UNC and UNF mean coarse and fine. |
+| **Minor diameter** | The diameter at the inside of the thread's ridges, a little under the tap drill. Some CAD models draw a threaded hole at this size; others at the tap drill or the full thread size. |
 | **Tap drill** | The drill size made for a thread. 6.8 mm is the tap drill for M8, and 5.0 mm for M6. |
 | **Counterbore** | A wider, shallow step at the top of a hole, so a bolt head sits flush or below the surface |
 | **Countersink** | A cone-shaped opening at the top of a hole, for a flat-head screw |
@@ -100,7 +102,7 @@ The people involved:
 | **Tolerance** | How far a dimension may vary and still be acceptable, for example 6.8 ± 0.1 mm |
 | **Tolerance callout** | How a drawing states a size and its tolerance. `4X Ø.250 +.003 -.001` means four holes, 0.250" diameter, allowed from 0.249" to 0.253". |
 
-**In Hole-CAM:** it finds round holes, measures diameter and depth, and labels each through or blind. Depth means the full-diameter depth, not counting the drill point. Claude noticed the test plate's 6.8 mm and 5.0 mm holes match the M8 and M6 tap drills and warned that tapping might be missing. A counterbore shows up as two separate holes. With the drawing uploaded, Claude reads the tolerance callouts, and a hole toleranced tighter than a drill can hold (a drill may cut up to about 0.1 mm oversize) is drilled under size and reamed.
+**In Hole-CAM:** it finds round holes, measures diameter and depth, and labels each through or blind. Depth means the full-diameter depth, not counting the drill point. Claude noticed the test plate's 6.8 mm and 5.0 mm holes match the M8 and M6 tap drills and warned that tapping might be missing. Holes are tapped when the drawing calls out a thread or the machinist asks: the hole is drilled with the tap's own tap drill, then tapped. A counterbore shows up as two separate holes. With the drawing uploaded, Claude reads the tolerance callouts, and a hole toleranced tighter than a drill can hold (a drill may cut up to about 0.1 mm oversize) is drilled under size and reamed.
 
 ---
 
@@ -114,6 +116,7 @@ The people involved:
 | **Jobber drill** | The standard, general-purpose drill length |
 | **Flute length** | How much of the drill can actually cut. A hole deeper than the flute length can't be drilled with that tool. |
 | **Reamer** | A finishing tool with many straight flutes that cuts on its sides. It's fed in and back out slowly (cycle `G85`), never pulled out at rapid, which would scratch the finished wall. |
+| **Tap** | A tool that cuts a thread inside a drilled hole. Its first few threads are ground down (the **lead**) so it starts gently. It has to advance exactly one pitch per turn, or it strips the thread or snaps. |
 | **Spot drill** | A short, stiff drill used to make a small starting cone. Long drills flex and can wander off position when starting on a flat surface, and the spot gives them a guide. |
 | **HSS, cobalt, carbide** | Tool materials. HSS (high-speed steel) is cheap and tough. Cobalt HSS handles more heat. Carbide is much harder and cuts much faster, but it's brittle and more expensive. |
 | **Tool library** | The list of tools the shop has available, with their sizes |
@@ -126,7 +129,8 @@ The people involved:
 | **Cutting speed** (surface speed, m/min) | How fast the tool's cutting edge moves past the material. Each material and tool material has a safe range. Too fast and the tool overheats and wears out. |
 | **Spindle speed** (rpm) | How fast the spindle turns. It comes from cutting speed: rpm = cutting speed × 1000 / (π × tool diameter). So bigger tools spin slower. |
 | **Feed per revolution** (mm/rev) | How far the drill advances each turn, which sets how thick each chip is |
-| **Feed rate** (mm/min) | How fast the tool advances: rpm × feed per revolution |
+| **Feed rate** (mm/min) | How fast the tool advances: rpm × feed per revolution. For a tap, the feed per revolution is the thread's pitch, exactly. |
+| **Rigid tapping** | The control locks the feed to the spindle's rotation so the tap advances one pitch per turn, reverses at the bottom, and backs out the same way. On a Fanuc it's switched on with `M29`. |
 | **Peck drilling** | Drilling in short steps, pulling the drill out between them so chips can escape. Without it, chips pack into the flutes of a deep hole, heat builds up and the drill can snap. A common rule is to peck past 3×D. |
 | **Cycle time** | How long the machine takes to make one part. Tool changes, trips home and air moves all add to it. |
 
@@ -173,11 +177,14 @@ Most codes are **modal**: once set, they stay in effect until something changes 
 | `G49` | Cancel the tool length offset |
 | `G81` | Drilling cycle: drill to depth in one go |
 | `G83` | Peck drilling cycle |
+| `G84` | Tapping cycle: feed in, reverse the spindle, feed out |
+| `G85` | Reaming (boring) cycle: feed in, feed back out |
 | `G80` | Cancel the drilling cycle |
 | `G98` / `G99` | After each hole, return to the starting height (G98) or only to the R plane (G99) |
 | `G28` | Go to machine home |
 | `T_ M06` | Change to tool number _ |
 | `M03` / `M05` | Spindle on (clockwise) or off |
+| `M29` | Rigid tapping mode for the next `G84` (Fanuc) |
 | `M08` / `M09` | Coolant on or off |
 | `M30` | End of program |
 

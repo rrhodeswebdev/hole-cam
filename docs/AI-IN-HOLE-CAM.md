@@ -39,8 +39,9 @@ sequenceDiagram
 
 | Claude decides | Plain code decides |
 |---|---|
-| Which operations to run (spot drill, drill, ream) and in what order | Finding the holes and measuring them |
-| What the drawing's hole callouts say, and which holes they point at | Converting them to mm, and whether a hole needs reaming |
+| Which operations to run (spot drill, drill, ream, tap) and in what order | Finding the holes and measuring them |
+| What the drawing's hole callouts say, and which holes they point at | Converting them to mm, and whether a hole needs reaming or tapping |
+| Which holes to tap, when the drawing or the machinist asks for threads | Whether the tap matches the thread, and its feed (rpm × pitch) |
 | Which drill goes with each hole | Spindle speeds and feed rates |
 | Plain drilling (G81) or peck drilling (G83), and the peck depth | Every coordinate and number in the G-code |
 | How deep to spot each hole | Whether the plan is acceptable |
@@ -65,11 +66,12 @@ You get the holes found in the CAD model, the material, the tool library and the
 - Drill each hole with the library drill whose diameter matches the hole. If no drill matches, do not drill that hole; add a warning naming the hole and what it would need (a reamer, a boring bar, helical interpolation).
 - Use G83 peck drilling when the hole is deeper than {peck_ratio} x its diameter. Peck about 1 x the drill diameter. Otherwise use G81 with peck 0. For drill operations, set depth to 0 (the depth comes from the model).
 - Group holes that share a tool and cycle into one operation to keep tool changes down.
+- Tap a hole only when the drawing calls it out as a thread or the machinist asks for one. Use the tap whose diameter and pitch match the thread, drill the hole first with that tap's tap_drill, then tap it: op tap, cycle G84, depth 0, peck 0. If the library has no matching tap, don't drill the hole bigger than the tap drill; leave it out and warn.
 - Only use tool IDs from the library. Give each operation a one-sentence reason a machinist would agree with.
 Speeds and feeds are calculated elsewhere; do not include them.
 
 The drawing, when there is one:
-- Read the hole callouts. For each callout that points at holes in this job, add an entry to drawing: the hole ids it points at, the callout as written (e.g. "4X Ø.250 +.003 -.001"), its units ("in" or "mm"), the nominal diameter, and the upper and lower deviations as signed numbers in those units (+.003 -.001 is 0.003 and -0.001; ±.010 is 0.010 and -0.010; for a fit like H7, its deviations). Match callouts to holes by size, count and where the leader points in each view. Leave out callouts for holes not in the job, such as holes on other faces. With no drawing, drawing is empty.
+- Read the hole callouts. For each callout that points at holes in this job, add an entry to drawing: the hole ids it points at, the callout as written (e.g. "4X Ø.250 +.003 -.001"), its units ("in" or "mm"), the nominal diameter, the upper and lower deviations as signed numbers in those units (+.003 -.001 is 0.003 and -0.001; ±.010 is 0.010 and -0.010; for a fit like H7, its deviations), and thread 0. For a thread callout (e.g. "M6x1.0-6H", "1/4-20 UNC-2B"), diameter is the thread's nominal size, plus and minus are 0, and thread is the pitch in mm for a metric thread or the threads per inch for an inch one. A threaded hole is usually modeled at its tap drill size, smaller than the thread. Match callouts to holes by size, count and where the leader points in each view. Leave out callouts for holes not in the job, such as holes on other faces. With no drawing, drawing is empty.
 - A hole whose upper deviation is under {drill_oversize} mm needs reaming, because a drill can cut that much oversize. Spot it, drill it with a library drill 0.1 to 0.4 mm smaller than the reamer, then ream it with the reamer that matches its diameter: op ream, cycle G85, depth 0, peck 0. If the library has no matching reamer or pre-drill, leave the hole out and warn.
 ```
 
@@ -91,9 +93,9 @@ Hole heights are given in the program's coordinates, where Z0 is the top of the 
 
 When a drawing is uploaded, the PDF goes in the same user message, as a document block ahead of the job text. The API gives Claude each page both as an image and as any text it contains. That matters for drawings like NIST's, where the dimensions are vector lines with no text layer: Claude reads them from the page image.
 
-Claude only transcribes. It gives each callout's numbers in the drawing's own units; code converts them to mm and applies the reaming rule. A model converting .003" to mm in its head is one more place for a slip, and the rule is a shop rule that belongs in code where it can be tested and changed.
+Claude only transcribes. It gives each callout's numbers in the drawing's own units, and for a thread its pitch (M3x0.5 → 0.5) or threads per inch (1/4-20 → 20); code converts them to mm and applies the reaming and tapping rules. A model converting .003" to mm in its head is one more place for a slip, and the rule is a shop rule that belongs in code where it can be tested and changed.
 
-Sending only the relevant tools keeps the prompt short as the library grows. The library has 44 tools, but the demo plate's prompt uses 3 tools and 1,893 input tokens. The schema's list of allowed tool IDs uses the same short list. Validation still checks against the whole library, so trimming the prompt can't let a bad tool choice through.
+Sending only the relevant tools keeps the prompt short as the library grows. The library has 58 tools; the demo plate's prompt gets 11 of them. That's the spot drill, the 5 mm and 6.8 mm drills, and the taps those holes could take with their tap drills: M5, M6 or 1/4-20 for 5 mm, and M8 or 5/16-18 for 6.8 mm. Before taps were added it got 3 tools and 1,893 input tokens. The schema's list of allowed tool IDs uses the same short list. Validation still checks against the whole library, so trimming the prompt can't let a bad tool choice through.
 
 ---
 
@@ -103,15 +105,15 @@ The reply must match a JSON schema (`plan_schema()`), using the API's **structur
 
 | Field | Type | Constraint |
 |---|---|---|
-| `operations[].op` | text | must be `spot_drill`, `drill` or `ream` |
+| `operations[].op` | text | must be `spot_drill`, `drill`, `ream` or `tap` |
 | `operations[].tool_id` | text | **must be one of the tool IDs in the library** |
 | `operations[].hole_ids` | list of integers | |
 | `operations[].depth` | number | spot depth in mm, or 0 for drills |
-| `operations[].cycle` | text | must be `G81`, `G83` or `G85` |
+| `operations[].cycle` | text | must be `G81`, `G83`, `G84` or `G85` |
 | `operations[].peck` | number | peck depth in mm, or 0 |
 | `operations[].reason` | text | one sentence |
 | `warnings` | list of text | anything the programmer should know |
-| `drawing[]` | list | one entry per hole callout read off the drawing: `hole_ids`, `callout` as written, `units` (`in` or `mm`), `diameter`, `plus`, `minus`. Empty with no drawing. |
+| `drawing[]` | list | one entry per hole callout read off the drawing: `hole_ids`, `callout` as written, `units` (`in` or `mm`), `diameter`, `plus`, `minus`, and `thread`: 0 for a plain hole, otherwise the pitch in mm or the threads per inch. Empty with no drawing. |
 
 Every field is required, and no extra fields are allowed. The tool list in the schema is built from the live tool library on each request, so Claude can't name a drill the shop doesn't have.
 
@@ -185,6 +187,9 @@ flowchart LR
 | A spot cone much wider than the hole | Validation |
 | A drawing callout put on the wrong hole | Validation: its size must match the model's hole, a `4X` callout can't list five holes, and a hole can't have two callouts |
 | A tight-tolerance hole drilled to size, or reamed without a proper pre-drill | Validation, using the tolerance converted by code |
+| A tapped hole drilled with the wrong drill, tapped before it's drilled, or tapped with a tap that doesn't match the drawing's thread | Validation, against the tap's own tap drill and the thread converted by code |
+| A drawing thread left untapped when the library has the tap | Validation |
+| A tap fed out of step with the spindle | Can't happen: the feed is computed as rpm × pitch; the LinuxCNC prove-out confirms it on the final program |
 | A plausible plan that still produces an unsafe program, including bugs in the G-code writer | The six safety checks on the final G-code |
 | Wrong speeds or feeds | Can't happen: Claude never provides them |
 
@@ -224,7 +229,10 @@ The NIST runs came after the tool library grew from 12 to 36 drills, which is wh
 | NIST FTC-07, relevant tools only | 33.1 s | 3,303 | 3,320 | $0.080 | 1, valid |
 | NIST FTC-07 with its 4-page drawing | 63.0 s | 11,929 | 6,121 | $0.17 | 1, valid |
 
-The drawing adds about 8,600 input tokens, roughly 2,000 per page, and doubles the cost. On that run Claude read the six callouts for holes in this setup, left out the four for side holes, and planned the 8 Ø.250 +.003" holes as spot, 6.0 mm drill, 1/4" ream. The program passed all six checks.
+| NIST FTC-08 with its drawing | 36.9 s | 11,374 | 3,782 | $0.12 | 1, valid |
+| NIST FTC-10 with its 5-page drawing | 94.6 s | 15,802 | 9,287 | $0.25 | 1, valid |
+
+The drawing adds about 8,600 input tokens on FTC-07, roughly 2,000 per page, and doubles the cost. On that run Claude read the six callouts for holes in this setup, left out the four for side holes, and planned the 8 Ø.250 +.003" holes as spot, 6.0 mm drill, 1/4" ream. On FTC-10 (measured 2026-11-08) it read all 12 callouts that apply, including three `2X M3x0.5-6g` threads: it drilled those six holes 2.5 mm and tapped them M3. All three programs passed all six checks, and LinuxCNC's interpreter ([REAL-PARTS.md](REAL-PARTS.md#proving-the-programs-out-on-linuxcnc)).
 
 What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
@@ -239,9 +247,10 @@ What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
 ```text
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole the drawing tolerances tighter than {drill_oversize} mm is drilled 0.1 to 0.4 mm under and then reamed with G85; the drawing entries match the holes' diameters; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a tapped hole is drilled with its tap's tap_drill, then tapped with G84 by a tap matching the drawing's thread; a hole the drawing threads is tapped when the library has the tap; a hole the drawing tolerances tighter than {drill_oversize} mm is drilled 0.1 to 0.4 mm under and then reamed with G85; the drawing entries match the holes' diameters; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
+summary: one or two sentences to the machinist saying what you changed, or why you couldn't.
 ```
 
 The revised plan is never trusted more than the first one. It goes through the validator, the G-code writer and the safety checks. The holes are measured again from the uploaded STEP file, not taken from the browser.
@@ -253,6 +262,7 @@ Live results on the mixed plate (2026-11-07):
 | "Do the deep holes first" | 8.7 s | Moved the deep 5 mm hole ahead of the shallow one, keeping the same drill loaded so no tool change was added | 0:35 → 0:35 |
 | "Skip spot drilling to save time" | 6.8 s | Declined: every drilled hole must be spotted first. Suggested merging the two spot operations instead, and noted the chamfer that would leave | unchanged |
 | "Peck every hole, 2 mm at a time" | 6.2 s | Switched every drill operation to G83 with 2 mm pecks, and merged the two 5 mm operations now that they match | 0:35 → 0:40 |
+| "Tap the 5 mm holes M6 and the 6.8 mm holes M8." (2026-11-08, 4,377 / 1,097 tokens, $0.04) | 10.5 s | Added an M6 and an M8 tap operation, noted the existing drills are already the tap drills, and warned that blind hole 3 is only 5 mm deep, so it gets just 2–3 full threads. This one started from the hand-checked plan | 0:32 → 0:55 |
 
 Token counts weren't recorded for these runs. The prompt is the first plan's prompt plus the current plan, so cost should be close to the first plan's, about $0.03 per request.
 
@@ -260,7 +270,7 @@ Token counts weren't recorded for these runs. The prompt is the first plan's pro
 
 ## What the live runs taught us
 
-Running against the real model found five problems the fake-client tests couldn't:
+Running against the real model found six things the fake-client tests couldn't:
 
 1. **Contradictory input caused a false warning.** Hole heights were sent in CAD coordinates while the machine settings said Z0 is the top of the part. Claude flagged it. The fix was to send hole heights in program coordinates. A test now checks this, and the warning is gone.
 2. **Claude's plans exposed a G-code inefficiency.** Claude split the spot drill into two operations with different depths, and the 5 mm drill into G81 and G83 operations. Both splits are correct, but the generator did a full tool change and trip home between operations using the same tool. The generator now keeps the tool loaded.
@@ -271,7 +281,9 @@ Running against the real model found five problems the fake-client tests couldn'
 
 5. **The validator was stricter than good practice.** On another FTC-07 run, Claude didn't spot drill the holes under the counterbores, and validation rejected the plan. Claude was right: the counterbore drill's point leaves a centered cone that guides the next drill like a spot. The validator now accepts it, and still rejects drilling that hole before the counterbore.
 
-All five are good examples of why a live model run belongs in testing, not just mocks.
+6. **A right outcome can come with a wrong reason.** On FTC-10 Claude left out three Ø3.5 ±0.2 holes, saying the #29 drill (3.454 mm) can't hold the tolerance. It can: 3.454 mm is inside 3.3–3.7 mm. What actually rules it out is the code's rule that a drill must match the model's hole within 0.02 mm. The reason text isn't validated, so it's worth reading with that in mind.
+
+All six are good examples of why a live model run belongs in testing, not just mocks.
 
 ---
 
@@ -291,7 +303,7 @@ All five are good examples of why a live model run belongs in testing, not just 
 
 The automated tests never call the real API. A `FakeClient` in `tests/test_planner.py` stands in for the Anthropic client and returns canned plans. The tests check:
 
-- every validation rule, with one deliberately broken plan per rule, including the drawing and reaming rules (`tests/test_drawing.py`)
+- every validation rule, with one deliberately broken plan per rule, including the drawing and reaming rules (`tests/test_drawing.py`) and the tapping rules (`tests/test_tapping.py`)
 - that a drawing reaches Claude as a PDF document block ahead of the job, on plans and revisions
 - that a rejected plan is retried once, with the errors in the retry message
 - giving up after one retry, and returning the errors

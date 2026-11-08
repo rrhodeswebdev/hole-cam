@@ -29,17 +29,18 @@ You get the holes found in the CAD model, the material, the tool library and the
 - Drill each hole with the library drill whose diameter matches the hole. If no drill matches, do not drill that hole; add a warning naming the hole and what it would need (a reamer, a boring bar, helical interpolation).
 - Use G83 peck drilling when the hole is deeper than {peck_ratio} x its diameter. Peck about 1 x the drill diameter. Otherwise use G81 with peck 0. For drill operations, set depth to 0 (the depth comes from the model).
 - Group holes that share a tool and cycle into one operation to keep tool changes down.
+- Tap a hole only when the drawing calls it out as a thread or the machinist asks for one. Use the tap whose diameter and pitch match the thread, drill the hole first with that tap's tap_drill, then tap it: op tap, cycle G84, depth 0, peck 0. If the library has no matching tap, don't drill the hole bigger than the tap drill; leave it out and warn.
 - Only use tool IDs from the library. Give each operation a one-sentence reason a machinist would agree with.
 Speeds and feeds are calculated elsewhere; do not include them.
 
 The drawing, when there is one:
-- Read the hole callouts. For each callout that points at holes in this job, add an entry to drawing: the hole ids it points at, the callout as written (e.g. "4X Ø.250 +.003 -.001"), its units ("in" or "mm"), the nominal diameter, and the upper and lower deviations as signed numbers in those units (+.003 -.001 is 0.003 and -0.001; ±.010 is 0.010 and -0.010; for a fit like H7, its deviations). Match callouts to holes by size, count and where the leader points in each view. Leave out callouts for holes not in the job, such as holes on other faces. With no drawing, drawing is empty.
+- Read the hole callouts. For each callout that points at holes in this job, add an entry to drawing: the hole ids it points at, the callout as written (e.g. "4X Ø.250 +.003 -.001"), its units ("in" or "mm"), the nominal diameter, the upper and lower deviations as signed numbers in those units (+.003 -.001 is 0.003 and -0.001; ±.010 is 0.010 and -0.010; for a fit like H7, its deviations), and thread 0. For a thread callout (e.g. "M6x1.0-6H", "1/4-20 UNC-2B"), diameter is the thread's nominal size, plus and minus are 0, and thread is the pitch in mm for a metric thread or the threads per inch for an inch one. A threaded hole is usually modeled at its tap drill size, smaller than the thread. Match callouts to holes by size, count and where the leader points in each view. Leave out callouts for holes not in the job, such as holes on other faces. With no drawing, drawing is empty.
 - A hole whose upper deviation is under {drill_oversize} mm needs reaming, because a drill can cut that much oversize. Spot it, drill it with a library drill 0.1 to 0.4 mm smaller than the reamer, then ream it with the reamer that matches its diameter: op ream, cycle G85, depth 0, peck 0. If the library has no matching reamer or pre-drill, leave the hole out and warn."""
 
 REVISE = """
 
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole the drawing tolerances tighter than {drill_oversize} mm is drilled 0.1 to 0.4 mm under and then reamed with G85; the drawing entries match the holes' diameters; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a tapped hole is drilled with its tap's tap_drill, then tapped with G84 by a tap matching the drawing's thread; a hole the drawing threads is tapped when the library has the tap; a hole the drawing tolerances tighter than {drill_oversize} mm is drilled 0.1 to 0.4 mm under and then reamed with G85; the drawing entries match the holes' diameters; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 summary: one or two sentences to the machinist saying what you changed, or why you couldn't."""
@@ -54,11 +55,11 @@ def plan_schema(tools):
                 "items": {
                     "type": "object",
                     "properties": {
-                        "op": {"type": "string", "enum": ["spot_drill", "drill", "ream"]},
+                        "op": {"type": "string", "enum": ["spot_drill", "drill", "ream", "tap"]},
                         "tool_id": {"type": "string", "enum": [t["id"] for t in tools]},
                         "hole_ids": {"type": "array", "items": {"type": "integer"}},
                         "depth": {"type": "number"},
-                        "cycle": {"type": "string", "enum": ["G81", "G83", "G85"]},
+                        "cycle": {"type": "string", "enum": ["G81", "G83", "G84", "G85"]},
                         "peck": {"type": "number"},
                         "reason": {"type": "string"},
                     },
@@ -78,8 +79,9 @@ def plan_schema(tools):
                         "diameter": {"type": "number"},
                         "plus": {"type": "number"},
                         "minus": {"type": "number"},
+                        "thread": {"type": "number"},
                     },
-                    "required": ["hole_ids", "callout", "units", "diameter", "plus", "minus"],
+                    "required": ["hole_ids", "callout", "units", "diameter", "plus", "minus", "thread"],
                     "additionalProperties": False,
                 },
             },
@@ -100,13 +102,16 @@ def _job(found, material, tools, machine):
 
 def offered_tools(found, tools):
     """The tools worth showing Claude: spot drills, each drill or reamer that fits a hole, the pre-drills for
-    those reamers, and for a hole no drill fits, the nearest drill on either side so Claude can say what's close.
-    Validation still uses the whole library; this only keeps the prompt short (44 tools would triple its size)."""
+    those reamers, each tap that fits a hole with its tap drill, and for a hole no drill fits, the nearest drill
+    on either side so Claude can say what's close.
+    Validation still uses the whole library; this only keeps the prompt short (58 tools would triple its size)."""
     drills = sorted((t for t in tools if t["type"] == "drill"), key=lambda t: t["diameter"])
     keep = {t["id"] for t in tools if t["type"] == "spot_drill"}
     for h in found["holes"]:
         for r in _fits(tools, "reamer", h["diameter"]):
             keep.update([r["id"]] + [t["id"] for t in _pre_drills(tools, r)])
+        for t in _taps_for(tools, h["diameter"]):
+            keep.update([t["id"], t["tap_drill"]])
         fits = _fits(tools, "drill", h["diameter"])
         if fits:
             keep.update(t["id"] for t in fits)
@@ -119,6 +124,18 @@ def offered_tools(found, tools):
 
 def _fits(tools, kind, diameter):
     return [t for t in tools if t["type"] == kind and abs(t["diameter"] - diameter) <= DIAMETER_TOL]
+
+
+def _thread_holds(major, pitch, diameter):
+    """CAD models a threaded hole anywhere from the thread's minor diameter (major - 1.0825 x pitch, e.g. 2.459 mm
+    for M3) or its tap drill, up to the thread size itself."""
+    return major - 1.0825 * pitch - DIAMETER_TOL <= diameter <= major + DIAMETER_TOL
+
+
+def _taps_for(tools, diameter):
+    """Taps whose thread a hole of this size could be modeled as, with their tap drill in the library."""
+    ids = {t["id"] for t in tools}
+    return [t for t in tools if t["type"] == "tap" and t["tap_drill"] in ids and _thread_holds(t["diameter"], t["pitch"], diameter)]
 
 
 def _pre_drills(tools, reamer):
@@ -183,14 +200,23 @@ def _ask(client, system, content, schema, found, tools, machine):
 
 
 def drawing_callouts(plan, machine):
-    """The plan's drawing callouts, sized in mm, with whether each needs reaming. Claude reads the drawing;
-    this code decides what the tolerance needs."""
+    """The plan's drawing callouts, sized in mm, with whether each needs reaming or tapping. Claude reads the
+    drawing; this code decides what the tolerance or thread needs."""
     out = []
     for c in plan.get("drawing") or []:
         k = 25.4 if c["units"] == "in" else 1.0
+        thread = c.get("thread", 0)
+        pitch = 0 if thread <= 0 else round(25.4 / thread if c["units"] == "in" else thread, 5)
         out.append({**c, "diameter_mm": round(c["diameter"] * k, 4), "plus_mm": round(c["plus"] * k, 4),
-                    "minus_mm": round(c["minus"] * k, 4), "ream": c["plus"] * k < machine["drill_oversize"]})
+                    "minus_mm": round(c["minus"] * k, 4), "pitch_mm": pitch, "tap": pitch > 0,
+                    "ream": not pitch and c["plus"] * k < machine["drill_oversize"]})
     return out
+
+
+def _tap_path(tools, hole, c):
+    """The library tap for a hole's thread callout, or None."""
+    return next((t for t in _taps_for(tools, hole["diameter"]) if abs(t["diameter"] - c["diameter_mm"]) <= DIAMETER_TOL
+                 and abs(t["pitch"] - c["pitch_mm"]) <= 0.01), None)
 
 
 def _ream_path(tools, hole):
@@ -226,12 +252,16 @@ def validate(plan, found, tools, machine):
                 continue
             if hid in callout:
                 errors.append(f"drawing: hole {hid} has two callouts, {callout[hid]['callout']!r} and {c['callout']!r}")
-            if abs(c["diameter_mm"] - h["diameter"]) > DIAMETER_TOL:
+            if not _thread_holds(c["diameter_mm"], c["pitch_mm"], h["diameter"]) if c["tap"] else abs(c["diameter_mm"] - h["diameter"]) > DIAMETER_TOL:
                 errors.append(f"drawing: {c['callout']!r} is {c['diameter_mm']:g} mm but hole {hid} is {h['diameter']:g} mm "
                               "in the model: wrong hole, or the drawing and model disagree")
             callout[hid] = c
     needs_ream = {hid for hid, c in callout.items() if c["ream"]}
+    needs_tap = {hid for hid, c in callout.items() if c["tap"]}
     to_ream = {hid for op in plan["operations"] if op["op"] == "ream" for hid in op["hole_ids"]}
+    tap_for = {hid: lib[op["tool_id"]] for op in plan["operations"] if op["op"] == "tap" and op["tool_id"] in lib
+               for hid in op["hole_ids"]}
+    tapped = {}
 
     for n, op in enumerate(plan["operations"], 1):
         tool = lib.get(op["tool_id"])
@@ -256,6 +286,23 @@ def validate(plan, found, tools, machine):
             reach = _tip_depth(op, tool, h, machine)
             if reach > tool["flute_length"]:
                 errors.append(f"{where}: hole {hid} needs {reach:.1f} mm of reach; flutes are {tool['flute_length']} mm")
+            if op["op"] == "tap":
+                if hid in tapped:
+                    errors.append(f"{where}: hole {hid} is already tapped in operation {tapped[hid]}")
+                tapped[hid] = n
+                need = lib.get(tool["tap_drill"], {}).get("diameter")
+                if tool not in _taps_for(tools, h["diameter"]):
+                    errors.append(f"{where}: a {tool['description']} tap doesn't fit a {h['diameter']} mm hole {hid}")
+                elif hid not in drill_size:
+                    errors.append(f"{where}: hole {hid} is tapped before it is drilled")
+                elif abs(drill_size[hid] - need) > DIAMETER_TOL:
+                    errors.append(f"{where}: hole {hid} was drilled {drill_size[hid]:g} mm; this tap needs "
+                                  f"{tool['tap_drill']} ({need:g} mm)")
+                c = callout.get(hid)
+                if c and (not c["tap"] or abs(tool["diameter"] - c["diameter_mm"]) > DIAMETER_TOL
+                          or abs(tool["pitch"] - c["pitch_mm"]) > 0.01):
+                    errors.append(f"{where}: hole {hid} is {c['callout']!r} on the drawing; a {tool['description']} tap doesn't make that")
+                continue
             if op["op"] == "ream":
                 if hid in reamed:
                     errors.append(f"{where}: hole {hid} is already reamed in operation {reamed[hid]}")
@@ -275,7 +322,9 @@ def validate(plan, found, tools, machine):
             if hid not in spotted and not (hid in above and above[hid] in drilled):
                 errors.append(f"{where}: hole {hid} is drilled before it is spotted")
             undersize = hid in to_ream and _stock_ok(tool["diameter"], h["diameter"])
-            if abs(tool["diameter"] - h["diameter"]) > DIAMETER_TOL and not undersize:
+            # A hole modeled at thread size is drilled at its tap's drill size.
+            tap_drill = hid in tap_for and tool["id"] == tap_for[hid].get("tap_drill")
+            if abs(tool["diameter"] - h["diameter"]) > DIAMETER_TOL and not (undersize or tap_drill):
                 errors.append(f"{where}: a {tool['diameter']} mm drill on a {h['diameter']} mm hole {hid}")
             elif hid in needs_ream and not undersize:
                 errors.append(f"{where}: hole {hid} is toleranced {callout[hid]['callout']!r}, tighter than a drill holds; "
@@ -286,6 +335,8 @@ def validate(plan, found, tools, machine):
             errors.append(f"{where}: G83 needs a peck depth above 0")
         if (op["op"] == "ream") != (op.get("cycle") == "G85"):
             errors.append(f"{where}: reaming uses G85 (feed in and back out), and only reaming does")
+        if (op["op"] == "tap") != (op.get("cycle") == "G84"):
+            errors.append(f"{where}: tapping uses G84 (spindle reverses to back out), and only tapping does")
 
     # A hole under a wider one has its R plane below the surface when the wider one is deeper than the R clearance:
     # until the wider hole is cut, that rapid ends in solid metal. The G-code checker only knows one surface
@@ -307,6 +358,12 @@ def validate(plan, found, tools, machine):
             continue  # can't be reached until the wider hole above it is made some other way
         if hid in needs_ream and not path:
             continue  # the library can't hold the tolerance; Claude warns about it
+        tap = _tap_path(tools, h, callout[hid]) if hid in needs_tap else None
+        if hid in needs_tap and hid not in tapped and tap:
+            errors.append(f"hole {hid} is threaded {callout[hid]['callout']!r} on the drawing: drill it with "
+                          f"{tap['tap_drill']} and tap it with {tap['id']}")
+        if hid in needs_tap and not tap:
+            continue  # no tap for this thread; Claude warns about it
         if hid not in drilled and has_drill(h):
             errors.append(f"hole {hid} ({h['diameter']} mm) is not drilled, but the library has a drill for it")
     return {"errors": errors}

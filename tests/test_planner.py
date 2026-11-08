@@ -165,15 +165,21 @@ def test_claude_sees_only_the_drills_that_matter():
     client = FakeClient(GOOD)
     plan_job(MIXED, MATERIALS["6061"], TOOLS, MACHINE, client=client)
     job = json.loads(client.calls[0]["messages"][0]["content"].split("\n", 1)[1])
-    assert [t["id"] for t in job["tools"]] == ["SPOT-90-10", "DRL-5.0", "DRL-6.8"]
+    # The threads a 5 mm or 6.8 mm hole could be modeled as, in case the drawing or the machinist asks for one:
+    # a 5 mm hole is M5 at thread size, or M6 or 1/4-20 near tap drill size; 6.8 mm is M8 or 5/16-18. Each tap
+    # comes with its tap drill.
+    offered = ["SPOT-90-10", "DRL-4.2", "DRL-5.0", "DRL-6.8", "DRL-#7", "DRL-F",
+               "TAP-M5X0.8", "TAP-M6X1", "TAP-M8X1.25", "TAP-1/4-20", "TAP-5/16-18"]
+    assert [t["id"] for t in job["tools"]] == offered
     enum = client.calls[0]["output_config"]["format"]["schema"]["properties"]["operations"]["items"]["properties"]["tool_id"]["enum"]
-    assert enum == ["SPOT-90-10", "DRL-5.0", "DRL-6.8"]
+    assert enum == offered
 
 
 def test_a_hole_no_drill_fits_gets_the_nearest_drill_each_side():
     found = find_holes(FIX / "parts/odd_size.step")  # hole 1: Ø7.1 (no drill), hole 2: Ø6.8
     ids = [t["id"] for t in offered_tools(found, TOOLS)]
-    assert ids == ["SPOT-90-10", "DRL-6.8", "DRL-I", "DRL-9/32IN"]  # I = 6.909 mm, 9/32 = 7.144 mm
+    # I = 6.909 mm, 9/32 = 7.144 mm; the 6.8 mm hole could also be an M8 or 5/16-18 thread (F is that tap drill).
+    assert ids == ["SPOT-90-10", "DRL-6.8", "DRL-F", "DRL-I", "DRL-9/32IN", "TAP-M8X1.25", "TAP-5/16-18"]
 
 
 def test_hole_under_a_drilled_counterbore_needs_no_spot():

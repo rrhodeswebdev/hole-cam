@@ -1,12 +1,13 @@
 {
-  "_note": "Conservative starting values for HSS-cobalt jobber drills and chucking reamers. NOT verified against a manufacturer chart yet; check before cutting metal. vc = cutting speed in m/min. Feed tables are [max_diameter_mm, mm_per_rev]. Reamers run slower than drills and feed faster.",
+  "_note": "Conservative starting values for HSS-cobalt jobber drills, chucking reamers and HSS taps. NOT verified against a manufacturer chart yet; check before cutting metal. vc = cutting speed in m/min. Feed tables are [max_diameter_mm, mm_per_rev]. Reamers run slower than drills and feed faster. Taps run slowest, and their feed is always rpm x pitch, so they have no feed table.",
   "6061": {
     "name": "6061-T6 aluminum",
     "vc": 75,
     "spot_feed_per_rev": 0.05,
     "drill_feed_per_rev": [[3, 0.06], [6, 0.12], [10, 0.18], [13, 0.22]],
     "ream_vc": 40,
-    "ream_feed_per_rev": [[6.5, 0.2], [10, 0.25], [13, 0.3]]
+    "ream_feed_per_rev": [[6.5, 0.2], [10, 0.25], [13, 0.3]],
+    "tap_vc": 15
   },
   "1018": {
     "name": "1018 cold-rolled steel",
@@ -14,6 +15,7 @@
     "spot_feed_per_rev": 0.04,
     "drill_feed_per_rev": [[3, 0.05], [6, 0.09], [10, 0.14], [13, 0.18]],
     "ream_vc": 12,
-    "ream_feed_per_rev": [[6.5, 0.12], [10, 0.18], [13, 0.22]]
+    "ream_feed_per_rev": [[6.5, 0.12], [10, 0.18], [13, 0.22]],
+    "tap_vc": 8
   }
 }

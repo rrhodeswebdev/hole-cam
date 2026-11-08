@@ -52,12 +52,14 @@ The validator now enforces the order, since the plan is where order is known. It
 | CTC-05 | +Z | 24 | 4 | Ø3/4", Ø1.5" |
 | FTC-06 | −Z | 12 | 4 | Ø.400", Ø9/16", Ø13/16" |
 | FTC-07 | +Y | 16 | 16 | — |
-| FTC-08 | +Z | 20 | 12 | Ø.228", Ø.238", Ø.242" |
+| FTC-08 | +Z | 20 | 14 | Ø.238", Ø.242" |
 | FTC-09 | −Y | 29 | 22 | Ø.221", Ø.234", Ø3/4" |
-| FTC-10 | +Y | 28 | 16 | Ø2.46, Ø3.5 mm |
+| FTC-10 | +Y | 28 | 16 | Ø2.46 (M3 threads, see below), Ø3.5 mm |
 | FTC-11 | +Z | 1 | 0 | Ø32 mm |
 
-I checked three parts against their drawings: CTC-01, FTC-07 and FTC-08. All three matched exactly. The rest weren't checked hole by hole.
+FTC-08's Ø.228" holes gained a drill when the 5.8 mm reaming pre-drill was added; the live runs below were made before that.
+
+I checked four parts against their drawings: CTC-01, FTC-07, FTC-08 and FTC-10. All four matched exactly. The rest weren't checked hole by hole.
 
 Holes with no matching drill aren't errors. Claude names them in the plan's warnings with what they need: a reamer, a boring bar, or helical milling.
 
@@ -76,7 +78,7 @@ I ran the full pipeline live on the four parts the library can mostly drill: pla
 
 What Claude got right without being told:
 - **FTC-07:** recognized the counterbores from the coaxial holes. It cut them before the holes beneath, and warned that a drill leaves a cone-shaped floor where a screw head needs a flat seat.
-- **FTC-08:** the 8 holes no library drill fits are Ø.228", .238" and .242", the sizes of #1, B and C drills, which the library doesn't have. Claude named a reamer, a boring bar or the right drill for each. (An earlier version of this page said these were the holes the drawing tolerances tightly. That was wrong: the drawing gives all 20 holes the same +.005/−.001", which a drill can hold.)
+- **FTC-08:** the 8 holes no library drill fits are Ø.228", .238" and .242", the sizes of #1, B and C drills, which the library doesn't have. Claude named a reamer, a boring bar or the right drill for each. (The library has since gained a 5.8 mm drill, which fits the Ø.228" holes. An earlier version of this page said these were the holes the drawing tolerances tightly. That was wrong: the drawing gives all 20 holes the same +.005/−.001", which a drill can hold.)
 - **FTC-09:** the plate is 3 mm thick, so it made the spot holes shallower to keep them from breaking through.
 - **FTC-10:** it read the 2.46 mm holes as M3 threads modeled at their inner diameter, and named the 2.5 mm tap drill they'd need.
 
@@ -92,9 +94,9 @@ One FTC-07 rerun was rejected: Claude hadn't spot drilled the 9/32" holes under 
 
 ## Reading the drawings
 
-A STEP file has the shape but not the tolerances. Hole-CAM now takes the drawing PDF as well: Claude reads the hole callouts, and code decides whether each hole can be drilled or must be reamed (see [HOW-IT-WORKS.md](HOW-IT-WORKS.md#reading-the-drawing)). The NIST drawings are a hard test, because their dimensions are drawn as lines with no text to search: they have to be read off the page.
+A STEP file has the shape but not the tolerances. Hole-CAM now takes the drawing PDF as well: Claude reads the hole callouts, and code decides whether each hole can be drilled, must be reamed, or is a thread to tap (see [HOW-IT-WORKS.md](HOW-IT-WORKS.md#reading-the-drawing)). The NIST drawings are a hard test, because their dimensions are drawn as lines with no text to search: they have to be read off the page.
 
-I read the FTC-07 and FTC-08 drawings myself first, so there was an answer to check against:
+I read the drawings myself first, so there was an answer to check against:
 
 | Part | Hole callouts in the drilling setup | Needs |
 |---|---|---|
@@ -102,10 +104,37 @@ I read the FTC-07 and FTC-08 drawings myself first, so there was an answer to ch
 | | 4 × Ø.281 +.006 −.001 | Drill |
 | | 4 × ⌴Ø.438 ±.010 counterbores | Drill (flat floor needs another tool) |
 | FTC-08 | 20 holes, all +.005 −.001 (or +.006 −.001) | Drill: +.005" is 0.127 mm, which a drill holds |
+| FTC-10 (mm) | 6 × M3x0.5-6g, in three `2X` callouts | **Tap** M3, drilled 2.5 mm |
+| | 3 × Ø3.5 G6, one callout each | **Ream** (G6 is +0.012/+0.004), but the library has no 3.5 mm reamer |
+| | 8 × Ø2.5 ±0.15, 4 × Ø6 ±0.15, 3 × Ø3.5 ±0.2, 4 × ⌴Ø10 ±0.25 counterbores | Drill |
 
 **Live, on FTC-07** (one run, $0.17, 63 s): Claude returned all six callouts for the holes in this setup, with the right sizes and tolerances, including the counterbore symbol, and left out the four callouts for holes on the sides. Code marked the 8 Ø.250 holes for reaming. Claude's plan spots them, drills them 6.0 mm and reams them with the 1/4" reamer on `G85`. It passed validation on the first attempt, and the program passed all six safety checks.
 
-What isn't verified: which of the identical Ø.250 callouts went to which of those 8 holes. Claude said itself that it assumed where the model's origin is. All four have the same tolerance, so the plan is the same either way, but on a part where they differed this would matter. FTC-08 hasn't been run live with its drawing.
+**Live, on FTC-08** (2026-11-08, $0.12, 37 s): Claude returned nine callouts covering all 20 holes, every one +.005 −.001 except the Ø.250 pair at +.006, so code marked none for reaming. It drilled 14 holes, using the new 5.8 mm drill for the Ø.228" pair, and checked that 5.8 mm lands inside that tolerance. The other 6 holes it left out with the drill each would need. It passed validation first time and all six safety checks.
+
+**Live, on FTC-10** (2026-11-08, $0.25, 95 s): the five-page drawing has its threads on page 4 only, as `2X M3x0.5-6g`. Claude read all 12 callouts for this setup and none for the side features, which matches the list above. It drilled the six M3 holes 2.5 mm, peck drilling because they're 12 mm deep, then tapped them on `G84`. Unprompted, it pointed out that "6g" is a class for external threads, and tapped them as standard internal M3. Code marked the three Ø3.5 G6 holes for reaming, and with no 3.5 mm reamer they were left out with a warning, as designed. First attempt valid; all six checks passed.
+
+One thing it got wrong was a reason, not a result. It left out the Ø3.5 ±0.2 holes saying a #29 drill (3.454 mm) can't hold the tolerance, but 3.454 mm is inside 3.3–3.7 mm. The real reason is the code's rule that a drill must be within 0.02 mm of the model's hole.
+
+What isn't verified: which of identical callouts went to which holes, such as the four Ø.250 callouts on FTC-07 or the three Ø3.5 G6 callouts on FTC-10. Each set has the same tolerance, so the plan is the same either way, but on a part where they differed this would matter.
+
+---
+
+## Proving the programs out on LinuxCNC
+
+The safety checks read programs with this project's own G-code reader, so a misunderstanding shared by the writer and the reader would slip through. As a second opinion, every program below was run through LinuxCNC's own interpreter (`scripts/linuxcnc_check.py`, see [HOW-IT-WORKS.md](HOW-IT-WORKS.md#a-second-opinion-linuxcncs-interpreter)). That checks the program reads without error, its moves match ours exactly, and the holes it cuts match the plan.
+
+| Program | Lines | Moves (LinuxCNC = ours) | Planned holes cut to size and depth | Result |
+|---|---|---|---|---|
+| Mixed plate, hand-checked plan | 43 | 67 | 4 of 4 | Pass |
+| Mixed plate, live "tap the 5 mm holes M6 and the 6.8 mm holes M8" | 67 | 83 | 4 of 4, all tapped | Pass |
+| Boss part | 28 | 15 | 2 of 2 | Pass |
+| FTC-07 live, with drawing (reaming) | 102 | 159 | 16 of 16 | Pass |
+| FTC-08 live, with drawing | 74 | 111 | 14 of 14 | Pass |
+| FTC-10 live, with drawing (M3 tapping) | 108 | 289 | 22 of 22 | Pass |
+| FTC-07, 08, 09, 10, the earlier live plans | 59–97 | 95–175 | 66 of 66 | Pass |
+
+The first run failed every program, on a real portability bug: `G43 H1 Z25.` with no motion code. A Fanuc runs it as a rapid because `G00` is still in effect; LinuxCNC rejects it, and a control that starts up in feed mode would feed there instead. The generator now writes `G00 G43 H1 Z25.`. It also found tool comments with parentheses inside parentheses, `(DRILL 7/16 (11.112MM))`, which end the comment early on a Fanuc. Both are fixed, and the reference program was updated.
 
 ---
 
@@ -115,4 +144,6 @@ What isn't verified: which of the identical Ø.250 callouts went to which of tho
 - **Tool reach.** On FTC-07 the holes are on a boss 117 mm down inside the box. Nothing checks that the tool and holder are long enough, or clear the walls. Claude raised this on FTC-08; the code doesn't check it.
 - **Setups are limited to the six sides of the model's box.** Holes on angled faces are always skipped, and only one setup is planned.
 - **Big parts are slow to read.** Hole finding takes up to 16 seconds on CTC-02, because the setup search tries both faces along the main axis.
+- **A drill inside the drawing's tolerance but not the model's size** isn't allowed. On FTC-10, a #29 drill would make the Ø3.5 ±0.2 holes, but the validator wants a drill within 0.02 mm of the model, so they're left out. With a drawing, the rule could be "the drilled size lands inside the tolerance".
+- **Threads without a drawing** are only tapped when the machinist asks. A 5 mm hole could be a plain hole or an M6 thread, and the model can't say which.
 - **Precision holes without a drawing.** The tolerance isn't in the STEP geometry, so without the drawing a hole that needs reaming gets drilled if a drill matches. With the drawing, only holes the library has a reamer and pre-drill for can be reamed; others are left out with a warning.

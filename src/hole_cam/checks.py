@@ -43,7 +43,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
     """Return findings as [{line, check, message}]. bottom_z enables the too-deep check.
     Pass a list as trace to collect the program's motion for the preview and cycle time: every move as
     {tool, kind: rapid|feed, line, from, to, seconds}, and every tool change as {tool, kind: tool_change, line, seconds}.
-    G83 holes are expanded into their individual pecks; G85 and G89 feed back out."""
+    G83 holes are expanded into their individual pecks; G84, G85 and G89 feed back out."""
     local_tops = {(round(x, 3), round(y, 3)): z for (x, y), z in (local_tops or {}).items()}
     findings = []
 
@@ -168,7 +168,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
                 pecks(nx, ny, n)
             else:
                 move("feed", (nx, ny, cycle_r), (nx, ny, cycle_z), n)
-            if cycle in (85, 89):  # boring and reaming cycles feed back out to R
+            if cycle in (84, 85, 89):  # tapping (spindle reversed), boring and reaming cycles feed back out to R
                 move("feed", (nx, ny, cycle_z), (nx, ny, cycle_r), n)
                 move("rapid", (nx, ny, cycle_r), (nx, ny, back), n)
             else:

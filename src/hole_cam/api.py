@@ -111,8 +111,8 @@ def _job(found, mesh):
     return {**found, "mesh": mesh, "plan": None, "plan_errors": [],
             "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
             "tool_numbers": {t["id"]: t["number"] for t in TOOLS},
-            "tool_info": {t["number"]: {k: t[k] for k in ("type", "diameter", "point_angle", "flute_length")} for t in TOOLS},
-            "cycle_seconds": None, "drawing": []}
+            "tool_info": {t["number"]: {k: t.get(k) for k in ("type", "diameter", "point_angle", "flute_length", "pitch")} for t in TOOLS},
+            "cycle_seconds": None, "drawing": [], "drill_oversize": MACHINE["drill_oversize"]}
 
 
 def _call_planner(fn, *args, client, drawing):

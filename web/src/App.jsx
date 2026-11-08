@@ -6,7 +6,7 @@ const fmt = (n) => Number(n.toFixed(3)).toString()
 const EXAMPLES = ['Do the deep holes first', 'Peck every hole, 2 mm at a time', 'Spot drill 1 mm deep', 'Skip spot drilling to save time']
 
 // One line per operation, used for the plan list and to compare plans.
-const OP_NAMES = { spot_drill: 'Spot drill', drill: 'Drill', ream: 'Ream' }
+const OP_NAMES = { spot_drill: 'Spot drill', drill: 'Drill', ream: 'Ream', tap: 'Tap' }
 const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
   ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
   : `T${toolNumbers[op.tool_id]} ${OP_NAMES[op.op]} · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
@@ -173,7 +173,7 @@ function Results({ job, onDownload, activeLine, change }) {
         ))}
       </section>
 
-      {job.drawing?.length > 0 && <FromDrawing callouts={job.drawing} />}
+      {job.drawing?.length > 0 && <FromDrawing callouts={job.drawing} oversize={job.drill_oversize} />}
 
       {plan && (
         <section className="card">
@@ -307,9 +307,8 @@ function RevisionResult({ job, revision, onUndo }) {
   )
 }
 
-// Over the 3D area while Claude works: what's happening and how long it's taken.
-// What Claude read off the drawing, and what the tolerance needs: the Drill/Ream call is made by code, not Claude.
-function FromDrawing({ callouts }) {
+// What Claude read off the drawing, and what the tolerance or thread needs: the Drill/Ream/Tap call is made by code, not Claude.
+function FromDrawing({ callouts, oversize }) {
   const dev = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v))
   return (
     <section className="card">
@@ -321,17 +320,21 @@ function FromDrawing({ callouts }) {
             <tr key={i}>
               <td>{c.callout}</td>
               <td>{c.hole_ids.join(', ')}</td>
-              <td>{dev(c.plus_mm)} / {dev(c.minus_mm)}</td>
-              <td>{c.ream ? <strong>Ream</strong> : 'Drill'}</td>
+              <td>{c.tap ? `thread, ${fmt(c.pitch_mm)} pitch` : `${dev(c.plus_mm)} / ${dev(c.minus_mm)}`}</td>
+              <td>{c.tap ? <strong>Tap</strong> : c.ream ? <strong>Ream</strong> : 'Drill'}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="muted small">A drill can cut up to 0.1 mm oversize, so a hole with a tighter upper tolerance is drilled under size and reamed.</p>
+      <p className="muted small">
+        A drill can cut up to {fmt(oversize)} mm oversize, so a hole with a tighter upper tolerance is drilled under size and reamed.
+        {callouts.some((c) => c.tap) && ' A threaded hole is drilled at its tap drill size, then tapped.'}
+      </p>
     </section>
   )
 }
 
+// Over the 3D area while Claude works: what's happening and how long it's taken.
 function Working({ what, drawing }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {

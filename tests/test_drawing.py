@@ -90,7 +90,7 @@ def test_tight_hole_the_library_cant_ream_may_be_left_out():
 def test_reaming_program_uses_g85_at_reaming_speed():
     nc = generate(FOUND, REAMED, TOOLS, MATERIALS["6061"], MACHINE)
     # 40 m/min on a 6.35 mm reamer is 2005 rpm; 0.2 mm/rev is 401 mm/min. It reams to full depth, no point.
-    assert "T43 M06 (REAMER 1/4 (6.350MM))\nG43 H43 Z25. S2005 M03" in nc
+    assert "T43 M06 (REAMER 1/4 6.350MM)\nG00 G43 H43 Z25. S2005 M03" in nc
     assert "G98 G85 X10. Y10. Z-7.62 R2. F401." in nc
     assert check(nc, MACHINE, local_tops={(h["x"], h["y"]): 0 for h in FOUND["holes"]}, bottom_z=-30) == []
 
@@ -132,6 +132,7 @@ def test_api_sends_the_drawing_and_returns_its_callouts(api):
                     data={"material": "6061"})
     assert r.status_code == 200, r.text
     assert r.json()["drawing"] == [] and r.json()["export_ok"] is True
+    assert r.json()["drill_oversize"] == 0.1  # the drawing card's note reads it, not a hard-coded number
     assert fake.calls[0]["messages"][0]["content"][0]["type"] == "document"
 
 

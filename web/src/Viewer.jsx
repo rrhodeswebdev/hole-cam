@@ -8,6 +8,7 @@ const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5]
 const DEFAULT_SPEED = 1 // real machine time
 const HELIX = (30 * Math.PI) / 180 // flute helix angle of a standard jobber drill
 const FLUTE_DEPTH = 0.72 // how far the flutes cut in, as a fraction of the radius
+const THREAD_DEPTH = 0.12 // a tap's thread depth, as a fraction of the radius
 const SPIN = 3 // spindle turns per second on screen (the real rpm would just flicker)
 const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 
@@ -23,9 +24,9 @@ function timeline(toolpath) {
   })
 }
 
-const TOOL_NAMES = { spot_drill: 'spot drill', drill: 'drill', reamer: 'reamer' }
+const TOOL_NAMES = { spot_drill: 'spot drill', drill: 'drill', reamer: 'reamer', tap: 'tap' }
 const toolName = (n, info) => `T${n} · ${info?.diameter} mm ${TOOL_NAMES[info?.type] ?? 'tool'}`
-const VERBS = { spot_drill: 'Spot drilling', drill: 'Drilling', reamer: 'Reaming' }
+const VERBS = { spot_drill: 'Spot drilling', drill: 'Drilling', reamer: 'Reaming', tap: 'Tapping' }
 
 // A plain-words description of each move, e.g. "Drilling hole 4 · peck 2 of 5" or "Pulling out to clear chips".
 export function describeSteps(events, holes, toolInfo) {
@@ -33,7 +34,7 @@ export function describeSteps(events, holes, toolInfo) {
   const holeAt = (p) => holes.find((h) => near([h.x, h.y], p))
   const key = (e) => `${e.line} ${e.to[0]} ${e.to[1]}`
   const feeds = {}
-  const down = (e) => e.kind === 'feed' && e.to[2] < e.from[2] // a reamer also feeds back out
+  const down = (e) => e.kind === 'feed' && e.to[2] < e.from[2] // reamers and taps also feed back out
   for (const e of events) if (down(e)) feeds[key(e)] = (feeds[key(e)] ?? 0) + 1
   const done = {}
   return events.map((e) => {
@@ -42,7 +43,9 @@ export function describeSteps(events, holes, toolInfo) {
     const hole = holeAt(e.to)
     const where = hole ? `hole ${hole.id}` : 'the next position'
     const k = key(e)
-    if (e.kind === 'feed' && !down(e)) return { what: `Feeding back out of ${where}`, tool }
+    if (e.kind === 'feed' && !down(e)) {
+      return { what: toolInfo[e.tool]?.type === 'tap' ? `Reversing out of ${where}` : `Feeding back out of ${where}`, tool }
+    }
     if (e.kind === 'feed') {
       done[k] = (done[k] ?? 0) + 1
       const verb = VERBS[toolInfo[e.tool]?.type] ?? 'Drilling'
@@ -67,13 +70,13 @@ function stateAt(events, t) {
 }
 
 // Fluted part of a cutting tool, tip at the origin pointing down: a fluted cross-section swept up a right-hand
-// helix, shrinking over the first tipLength mm (to a point for a drill, to a short chamfer for a reamer).
-// A drill has 2 flutes on a helix; a reamer has 6 straight ones.
-function fluteGeometry(r, tipLength, fluteLength, { flutes = 2, helix = HELIX, tipScale = 0 } = {}) {
+// helix, shrinking over the first tipLength mm (to a point for a drill, to a short chamfer for a reamer or tap).
+// A drill has 2 flutes on a helix; a reamer has 6 straight ones; a tap has 4 straight ones and a thread of the given pitch.
+function fluteGeometry(r, tipLength, fluteLength, { flutes = 2, helix = HELIX, tipScale = 0, pitch = 0 } = {}) {
   const around = 48
   const lead = helix ? (2 * Math.PI * r) / Math.tan(helix) : Infinity
   const zs = Array.from({ length: 8 }, (_, i) => (tipLength * i) / 8)
-  for (let z = tipLength; z < fluteLength; z += 0.5) zs.push(z)
+  for (let z = tipLength; z < fluteLength; z += pitch ? pitch / 8 : 0.5) zs.push(z)
   zs.push(fluteLength)
   const position = []
   for (const z of zs) {
@@ -81,7 +84,9 @@ function fluteGeometry(r, tipLength, fluteLength, { flutes = 2, helix = HELIX, t
     const twist = (z / lead) * 2 * Math.PI
     for (let j = 0; j < around; j++) {
       const a = (j / around) * 2 * Math.PI
-      const rho = r * scale * (1 - FLUTE_DEPTH * Math.max(0, Math.sin(flutes * a)) ** 1.5)
+      // A right-hand thread: the crest is where the angle around and the height agree, one pitch per turn.
+      const thread = pitch ? 1 - THREAD_DEPTH * (0.5 + 0.5 * Math.cos(2 * Math.PI * (z / pitch) - a)) : 1
+      const rho = r * scale * thread * (1 - FLUTE_DEPTH * Math.max(0, Math.sin(flutes * a)) ** 1.5)
       position.push(rho * Math.cos(a + twist), rho * Math.sin(a + twist), z)
     }
   }
@@ -102,12 +107,14 @@ function fluteGeometry(r, tipLength, fluteLength, { flutes = 2, helix = HELIX, t
 const zCylinder = (radius, height, bottom) =>
   new THREE.CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2).translate(0, 0, bottom + height / 2)
 
-// A drill or reamer in its collet: fluted body, a little bare shank, then the collet nut (in the tool's plan
+// A drill, reamer or tap in its collet: fluted body, a little bare shank, then the collet nut (in the tool's plan
 // color) and holder.
 function toolModel(number, info, envMap) {
   const r = info.diameter / 2
   const reamer = info.type === 'reamer'
-  const tipLength = reamer ? 0.4 : r / Math.tan(((info.point_angle ?? 118) / 2) * (Math.PI / 180))
+  const tap = info.type === 'tap'
+  const tipLength = reamer ? 0.4 : tap ? 3 * info.pitch : r / Math.tan(((info.point_angle ?? 118) / 2) * (Math.PI / 180))
+  const shape = reamer ? { flutes: 6, helix: 0, tipScale: 0.85 } : tap ? { flutes: 4, helix: 0, tipScale: 0.75, pitch: info.pitch } : {}
   const fluteLength = info.flute_length ?? info.diameter * 5
   const steel = new THREE.MeshStandardMaterial({ color: 0xd3d8de, metalness: 0.9, roughness: 0.3, envMap })
   const holder = new THREE.MeshStandardMaterial({ color: 0x6b737d, metalness: 0.8, roughness: 0.4, envMap })
@@ -116,7 +123,7 @@ function toolModel(number, info, envMap) {
   const nutBottom = fluteLength + 6
   const group = new THREE.Group()
   group.add(
-    new THREE.Mesh(fluteGeometry(r, tipLength, fluteLength, reamer ? { flutes: 6, helix: 0, tipScale: 0.85 } : {}), steel),
+    new THREE.Mesh(fluteGeometry(r, tipLength, fluteLength, shape), steel),
     new THREE.Mesh(zCylinder(r, 6, fluteLength), steel),
     new THREE.Mesh(zCylinder(nutRadius, 12, nutBottom), nut),
     new THREE.Mesh(zCylinder(nutRadius + 5, 30, nutBottom + 12), holder),
@@ -246,8 +253,10 @@ export default function Viewer({ job, onLine }) {
         const { i, e, tip } = stateAt(events, p.t)
         // At the end the tool has gone home (G28), which the trace doesn't place in work coordinates.
         const tool = showTool(e.tool, p.t >= total ? null : tip)
-        // M03 is clockwise seen from above, so the flutes appear to climb as they would on the machine.
-        if (p.playing) tool.rotation.z -= dt * SPIN * 2 * Math.PI
+        // M03 is clockwise seen from above, so the flutes appear to climb as they would on the machine. A tap
+        // backs out with the spindle reversed.
+        const reversed = job.tool_info[e.tool]?.type === 'tap' && e.kind === 'feed' && e.to[2] > e.from[2]
+        if (p.playing) tool.rotation.z -= (reversed ? -1 : 1) * dt * SPIN * 2 * Math.PI
         for (const bore of bores) {
           let cut = bore.top
           for (const c of bore.cuts) {

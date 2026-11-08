@@ -42,5 +42,19 @@
   {"id": "RMR-8H7", "number": 41, "type": "reamer", "diameter": 8.0, "point_angle": 90, "flute_length": 33, "description": "REAMER 8MM H7"},
   {"id": "RMR-10H7", "number": 42, "type": "reamer", "diameter": 10.0, "point_angle": 90, "flute_length": 38, "description": "REAMER 10MM H7"},
   {"id": "RMR-1/4IN", "number": 43, "type": "reamer", "diameter": 6.35, "point_angle": 90, "flute_length": 38, "description": "REAMER 1/4 (6.350MM)"},
-  {"id": "RMR-3/8IN", "number": 44, "type": "reamer", "diameter": 9.525, "point_angle": 90, "flute_length": 44, "description": "REAMER 3/8 (9.525MM)"}
+  {"id": "RMR-3/8IN", "number": 44, "type": "reamer", "diameter": 9.525, "point_angle": 90, "flute_length": 44, "description": "REAMER 3/8 (9.525MM)"},
+  {"id": "TAP-M3X0.5", "number": 45, "type": "tap", "diameter": 3, "pitch": 0.5, "tap_drill": "DRL-2.5", "point_angle": 90, "flute_length": 22, "description": "TAP M3X0.5"},
+  {"id": "TAP-M4X0.7", "number": 46, "type": "tap", "diameter": 4, "pitch": 0.7, "tap_drill": "DRL-3.3", "point_angle": 90, "flute_length": 25, "description": "TAP M4X0.7"},
+  {"id": "TAP-M5X0.8", "number": 47, "type": "tap", "diameter": 5, "pitch": 0.8, "tap_drill": "DRL-4.2", "point_angle": 90, "flute_length": 28, "description": "TAP M5X0.8"},
+  {"id": "TAP-M6X1", "number": 48, "type": "tap", "diameter": 6, "pitch": 1, "tap_drill": "DRL-5.0", "point_angle": 90, "flute_length": 32, "description": "TAP M6X1.0"},
+  {"id": "TAP-M8X1.25", "number": 49, "type": "tap", "diameter": 8, "pitch": 1.25, "tap_drill": "DRL-6.8", "point_angle": 90, "flute_length": 38, "description": "TAP M8X1.25"},
+  {"id": "TAP-M10X1.5", "number": 50, "type": "tap", "diameter": 10, "pitch": 1.5, "tap_drill": "DRL-8.5", "point_angle": 90, "flute_length": 44, "description": "TAP M10X1.5"},
+  {"id": "TAP-M12X1.75", "number": 51, "type": "tap", "diameter": 12, "pitch": 1.75, "tap_drill": "DRL-10.2", "point_angle": 90, "flute_length": 50, "description": "TAP M12X1.75"},
+  {"id": "TAP-8-32", "number": 52, "type": "tap", "diameter": 4.1656, "pitch": 0.79375, "tap_drill": "DRL-#29", "point_angle": 90, "flute_length": 25, "description": "TAP 8-32 UNC"},
+  {"id": "TAP-10-24", "number": 53, "type": "tap", "diameter": 4.826, "pitch": 1.05833, "tap_drill": "DRL-#25", "point_angle": 90, "flute_length": 28, "description": "TAP 10-24 UNC"},
+  {"id": "TAP-10-32", "number": 54, "type": "tap", "diameter": 4.826, "pitch": 0.79375, "tap_drill": "DRL-#21", "point_angle": 90, "flute_length": 28, "description": "TAP 10-32 UNF"},
+  {"id": "TAP-1/4-20", "number": 55, "type": "tap", "diameter": 6.35, "pitch": 1.27, "tap_drill": "DRL-#7", "point_angle": 90, "flute_length": 32, "description": "TAP 1/4-20 UNC"},
+  {"id": "TAP-5/16-18", "number": 56, "type": "tap", "diameter": 7.9375, "pitch": 1.41111, "tap_drill": "DRL-F", "point_angle": 90, "flute_length": 38, "description": "TAP 5/16-18 UNC"},
+  {"id": "TAP-3/8-16", "number": 57, "type": "tap", "diameter": 9.525, "pitch": 1.5875, "tap_drill": "DRL-5/16IN", "point_angle": 90, "flute_length": 44, "description": "TAP 3/8-16 UNC"},
+  {"id": "TAP-1/2-13", "number": 58, "type": "tap", "diameter": 12.7, "pitch": 1.95385, "tap_drill": "DRL-27/64IN", "point_angle": 90, "flute_length": 50, "description": "TAP 1/2-13 UNC"}
 ]

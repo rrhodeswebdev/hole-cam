@@ -58,6 +58,7 @@ This is the only stage that uses AI, because it's the one that calls for judgmen
 - **Match each hole to a drill of the same diameter.** If no drill fits, it leaves the hole out and says what it would need, such as a reamer or a boring bar.
 - **Peck drill deep holes.** Past 3× the hole's diameter, chips pack into the drill's flutes, so the drill is pulled out regularly to clear them (cycle G83). Shallower holes are drilled in one pass (cycle G81).
 - **Group holes by tool** to keep tool changes down, and **explain each choice** in terms a machinist can check.
+- **Tap a hole only when asked:** when the drawing calls out a thread, or the machinist asks for one ([Tapping](#tapping)).
 - **Read the drawing**, when there is one (see below).
 
 Claude is never asked for spindle speeds or feed rates. A wrong number there breaks tools, so those come from a table in stage 4.
@@ -66,24 +67,43 @@ The reply is constrained in two ways:
 - **A JSON schema (structured outputs):** the reply must be valid JSON in exactly the plan's format.
 - **Tool IDs limited to the real library:** the schema only allows tool names that exist, so Claude can't invent a drill.
 
-Claude can also add warnings nobody asked for. On the test plate, it noticed that 6.8 mm and 5.0 mm are the standard drill sizes for M8 and M6 threads, and warned that tapping might be missing from the job.
+Claude can also add warnings nobody asked for. On the test plate, it noticed that 6.8 mm and 5.0 mm are the standard drill sizes for M8 and M6 threads, and warned that tapping might be missing from the job. Asking "Tap the 5 mm holes M6 and the 6.8 mm holes M8" now adds it.
 
 ### Reading the drawing
 
 A STEP model has the shape but not the tolerances. Those are on the drawing, often only as lines and symbols with no searchable text, as on the NIST drawings. So Claude reads the PDF itself:
-- **What it returns:** each hole callout as written (for example `4X Ø.250 +.003 -.001`), the hole ids it points at, its units, the nominal size, and the upper and lower deviations.
+- **What it returns:** each hole callout as written (for example `4X Ø.250 +.003 -.001`), the hole ids it points at, its units, the nominal size, and the upper and lower deviations. For a thread (`M3x0.5-6g`, `1/4-20 UNC-2B`) it returns the pitch, or threads per inch, instead of deviations.
 - **How it matches callouts to holes:** by size, count and where the leader line points in each view. Callouts for holes not in this setup, such as holes on the sides, are left out.
-- **What code decides from it:** the sizes are converted to mm by code, not by Claude. Then code decides what each hole needs. A twist drill can cut up to 0.1 mm oversize (`drill_oversize` in `data/machine.json`), so a hole whose upper tolerance is tighter than that is **reamed**: drilled 0.1 to 0.4 mm under size, then finished with a reamer of the exact size. A reamer cuts on its sides, so it is fed in and back out (cycle `G85`) rather than pulled out fast, which would scratch the wall.
+- **What code decides from it:** the sizes are converted to mm by code, not by Claude. Then code decides what each hole needs. A twist drill can cut up to 0.1 mm oversize (`drill_oversize` in `data/machine.json`), so a hole whose upper tolerance is tighter than that is **reamed**: drilled 0.1 to 0.4 mm under size, then finished with a reamer of the exact size. A reamer cuts on its sides, so it is fed in and back out (cycle `G85`) rather than pulled out fast, which would scratch the wall. A thread callout means the hole is **tapped**.
 
-The page shows the callouts in a **From the drawing** table, with what each hole needs. On NIST part FTC-07, Claude read the six callouts for holes in this setup and left out the four for holes on the sides. The 8 Ø.250 holes are toleranced +.003", so they're reamed. The Ø.281 holes (+.006") and Ø.438 counterbores (±.010") are drilled.
+The page shows the callouts in a **From the drawing** table, with what each hole needs. On NIST part FTC-07, Claude read the six callouts for holes in this setup and left out the four for holes on the sides. The 8 Ø.250 holes are toleranced +.003", so they're reamed. The Ø.281 holes (+.006") and Ø.438 counterbores (±.010") are drilled. On FTC-10, Claude found three `2X M3x0.5-6g` callouts on page 4 of five, so those six holes are drilled 2.5 mm and tapped M3.
 
 ```mermaid
 flowchart LR
     pdf["Drawing PDF"] --> claude(["Claude reads callouts<br/>Ø, tolerance, which holes"])
     claude --> mm["Code: convert to mm,<br/>check Ø against the model"]
-    mm --> tight{"Upper tolerance<br/>under 0.1 mm?"}
+    mm --> thread{"Thread?"}
+    thread -->|yes| tap["Spot → tap drill<br/>→ tap (G84)"]
+    thread -->|no| tight{"Upper tolerance<br/>under 0.1 mm?"}
     tight -->|yes| ream["Spot → drill 0.1–0.4 mm under<br/>→ ream (G85)"]
     tight -->|no| drill["Spot → drill to size"]
+```
+
+### Tapping
+
+A tap cuts a thread into a drilled hole. The hole is drilled first with the tap's **tap drill**, a size made for that thread (5.0 mm for M6, #7 for 1/4-20). The library has 14 common taps, M3 to M12 and #8-32 to 1/2-13, each linked to its tap drill.
+
+Claude decides which holes get threads, and only when the drawing calls one out or the machinist asks for one. A 5 mm hole could be a plain hole or an M6 thread; the model alone doesn't say. Code checks everything else:
+- **Which taps fit a hole.** CAD models a threaded hole anywhere from the thread's minor diameter to its full size. FTC-10's M3 holes are 2.46 mm, the M3 minor diameter, not the 2.5 mm tap drill. So a tap fits a hole between its minor diameter and its thread size.
+- **The drill.** It must be the tap's own tap drill, even when the model shows the hole at full thread size.
+- **The cycle and feed.** Rigid tapping, Fanuc style: `M29 S…` locks the feed to the spindle, then `G84` feeds in, reverses the spindle and feeds back out. A tap must advance exactly one thread per turn, so the feed is rpm × pitch, never a table value. If that would pass the machine's feed limit, the spindle slows instead.
+
+```mermaid
+flowchart LR
+    callout["Drawing: M6x1.0<br/>or machinist: 'tap M6'"] --> pick(["Claude picks<br/>TAP-M6X1"])
+    pick --> v{"Code: tap fits the hole?<br/>drilled with DRL-5.0 first?<br/>matches the drawing's thread?"}
+    v -->|yes| g["M29 S796<br/>G84 … F796."]
+    v -->|no| rej["Rejected, with the reason"]
 ```
 
 ---
@@ -96,11 +116,15 @@ flowchart LR
 Plain code checks every plan, because a well-formatted plan can still be wrong. It rejects a plan if:
 
 - a tool can't do the operation (for example, a spot drill used to drill a hole)
-- a drill's diameter doesn't match its hole (within 0.02 mm), unless the hole is reamed afterwards
+- a drill's diameter doesn't match its hole (within 0.02 mm), unless the hole is reamed afterwards, or is tapped and this is its tap drill
 - a drawing callout's size doesn't match the model's size for the holes it points at, it lists more holes than its count (4X), or a hole has two callouts. The callout is on the wrong hole, or the drawing and model disagree; either way a person should look.
 - a hole the drawing tolerances tighter than a drill holds is drilled to size, or not reamed when the library has the reamer and pre-drill for it
 - a hole is reamed before it's drilled, or its pre-drill leaves less than 0.1 or more than 0.4 mm for the reamer
 - a reaming operation doesn't use `G85`, or a drilling one does
+- a tap doesn't fit its hole, or doesn't make the thread the drawing calls out
+- a hole is tapped before it's drilled, or was drilled with something other than its tap's tap drill
+- a hole the drawing threads isn't tapped, when the library has the tap
+- a tapping operation doesn't use `G84`, or another one does
 - a hole is drilled before it's spotted. A hole that starts at the floor of a wider hole already drilled counts as spotted, because the wider drill's point leaves a centered cone.
 - a hole under a counterbore deeper than the R-plane clearance is spotted or drilled before the counterbore is cut. Until then, the rapid down to its R plane would end inside the part.
 - a hole is drilled twice, or skipped even though a drill fits it
@@ -128,7 +152,7 @@ O1000 (MIXED)                          program number and name
 G21 G90 G17 G40 G49 G80                millimetres, absolute coordinates, XY plane, clear leftover offsets and cycles
 G54                                    use the work origin (front-left corner, top of the part)
 T1 M06 (SPOT DRILL 10MM 90DEG)         load tool 1
-G43 H1 Z25. S2387 M03                  apply tool 1's length offset, go to 25 mm above the part, spindle on at 2387 rpm
+G00 G43 H1 Z25. S2387 M03              apply tool 1's length offset, rapid to 25 mm above the part, spindle on at 2387 rpm
 M08                                    coolant on
 G00 X15. Y15.                          rapid over the first hole
 G98 G81 X15. Y15. Z-1.5 R2. F119.      drilling cycle: rapid to 2 mm above the surface, feed to depth, return to start height
@@ -142,11 +166,13 @@ M30                                    end of program
 %
 ```
 
+`G00` is written out on the tool-length-offset line rather than assumed from earlier. LinuxCNC rejects the line without it, and some Fanuc controls start up in feed mode. Running the programs through LinuxCNC's interpreter found this, along with a tool comment that had parentheses inside parentheses. A Fanuc ends a comment at the first `)`, which would leave a stray `)` on the line. Comments are now cleaned of anything but letters, numbers and a few safe symbols.
+
 ### Where the numbers come from
 
-- **Spindle speed:** rpm = cutting speed × 1000 / (π × tool diameter). In 6061 aluminum the table gives 75 m/min, so a 10 mm spot drill runs at 2387 rpm. Reamers have their own, slower cutting speed (40 m/min in 6061) and a larger feed per revolution. Speed is capped at the machine's maximum.
-- **Feed rate:** feed (mm/min) = rpm × feed per revolution. Feed per revolution comes from the material table and grows with drill diameter.
-- **Drilling depth:** a drill's tip is a cone, so it has to go deeper than the hole to make the full diameter reach the bottom. For a 118° drill, that extra length is (diameter / 2) / tan(59°), about 1.5 mm on a 5 mm drill. Through holes go another 1 mm so the drill breaks out cleanly. A reamer goes to the hole's depth; its short lead chamfer is ignored.
+- **Spindle speed:** rpm = cutting speed × 1000 / (π × tool diameter). In 6061 aluminum the table gives 75 m/min, so a 10 mm spot drill runs at 2387 rpm. Reamers have their own, slower cutting speed (40 m/min in 6061) and a larger feed per revolution, and taps are slowest (15 m/min). Speed is capped at the machine's maximum.
+- **Feed rate:** feed (mm/min) = rpm × feed per revolution. Feed per revolution comes from the material table and grows with drill diameter. For a tap it's the thread pitch: an M8 tap at 597 rpm feeds 597 × 1.25 = 746.25 mm/min.
+- **Drilling depth:** a drill's tip is a cone, so it has to go deeper than the hole to make the full diameter reach the bottom. For a 118° drill, that extra length is (diameter / 2) / tan(59°), about 1.5 mm on a 5 mm drill. Through holes go another 1 mm so the drill breaks out cleanly. A reamer goes to the hole's depth; its short lead chamfer is ignored. A tap goes through a through hole until its 3-thread lead is out the bottom, and stops one thread short of a blind hole's bottom. The thread depth on the drawing isn't read.
 - **Hole order:** within each operation, the next hole is always the nearest one not yet drilled, starting from the corner.
 - **Tool changes:** when two operations in a row use the same tool (for example, plain drilling then peck drilling with the 5 mm drill), it stays loaded and there's no trip home in between.
 
@@ -182,6 +208,21 @@ If any check fails, the program can't be downloaded.
 
 **How well it works:** on a set of 20 programs, 18 with one deliberately planted problem and 2 clean, the checker caught all 18 with no false alarms. Each bad program had to trip exactly its planted check and nothing else.
 
+### A second opinion: LinuxCNC's interpreter
+
+The checker and the preview both read the program with this project's own G-code reader. If that reader misunderstood a cycle the same way the writer did, nothing above would notice. So `scripts/linuxcnc_check.py` runs the program through `rs274`, the interpreter real LinuxCNC machines use, in Docker, and checks three things:
+1. LinuxCNC reads the whole program without an error.
+2. Its moves match the toolpath our checker traced, move for move.
+3. What its moves cut matches the plan. Every planned hole is cut to size and depth, nothing is cut anywhere else, and each tap reaches its depth without hitting the bottom, at exactly one pitch per turn.
+
+Two control differences are allowed for. LinuxCNC has no `M29`, so that line is dropped. And on the way out of a `G84` or `G85` hole under `G98`, Fanuc feeds to R and then rapids up while LinuxCNC feeds all the way, so those count as one move. For the move comparison, the peck re-entry gap is set to LinuxCNC's fixed 0.254 mm.
+
+All ten programs tried pass, from 15 to 289 moves each ([REAL-PARTS.md](REAL-PARTS.md#proving-the-programs-out-on-linuxcnc)). It catches what it should: removing the ream operation, swapping in the wrong drill, changing a tap's feed or driving a tap into the bottom each make it fail.
+
+```bash
+uv run python scripts/linuxcnc_check.py fixtures/parts/mixed.step fixtures/plans/mixed.json 6061   # needs Docker
+```
+
 ---
 
 ## 6. The preview
@@ -194,7 +235,7 @@ The page shows the part in 3D with the toolpath drawn over it:
 ### The simulated run and cycle time
 
 The view also plays the program back like a simple machine simulator. It starts by itself, or waits for Play if the computer is set to reduce motion.
-- **The tool:** a model of each drill in its holder moves through every move. It's built from the tool library: two spiral flutes at the drill's real diameter and flute length, ground to its real point angle, spinning while the program runs. The collet nut holding it is in the tool's color from the plan list. Peck cycles (`G83`) are played out in full: down one peck, back out to the R plane to clear chips, down again. A reamer has six straight flutes and feeds back out of the hole (`G85`).
+- **The tool:** a model of each drill in its holder moves through every move. It's built from the tool library: two spiral flutes at the drill's real diameter and flute length, ground to its real point angle, spinning while the program runs. The collet nut holding it is in the tool's color from the plan list. Peck cycles (`G83`) are played out in full: down one peck, back out to the R plane to clear chips, down again. A reamer has six straight flutes and feeds back out of the hole (`G85`). A tap has four straight flutes and a thread at its real pitch. It feeds in, then backs out with the spindle turning the other way (`G84`).
 - **The holes:** each hole fills in with the drill's color as the drill feeds down through it. Spot drilling doesn't count, since it only marks the start.
 - **The current step:** a card in the corner of the view says in plain words what the machine is doing ("Drilling hole 4 · peck 2 of 5", "Pulling out to clear chips", "Tool change: T8 · 6.8 mm drill"), with the tool and the G-code line being run. The same line is highlighted in the G-code listing, which scrolls to follow it.
 - **The controls:** play/pause, a slider to jump to any moment, and speeds from 0.1× to 5×. It plays at 1×, real machine time, by default. The slower speeds help follow the rapids, which take about a tenth of a second between holes.
@@ -209,7 +250,7 @@ flowchart LR
     kind -->|"G01 / cycle feed"| feed["distance ÷ programmed feed F"]
     kind -->|"M06"| tc["fixed tool-change time"]
     kind -->|"G83"| pecks["split into pecks,<br/>retracts and re-entries"] --> rapid & feed
-    kind -->|"G85"| out["feed in,<br/>feed back out"] --> feed
+    kind -->|"G84 / G85"| out["feed in,<br/>feed back out"] --> feed
     rapid & feed & tc --> sum["Estimated cycle time"]
 ```
 
@@ -277,7 +318,7 @@ The page sends the STEP file again with each request instead of the hole list. T
 The web page sends the STEP file, material and optional drawing PDF to `POST /jobs`, or to `POST /jobs/revise` with the current plan and a requested change. The server runs all six stages and returns everything in one response:
 - the holes and skipped holes
 - the plan, or the reasons it was rejected
-- the drawing callouts, in mm, with which holes need reaming
+- the drawing callouts, in mm, with which holes need reaming or tapping
 - the G-code and the safety check results
 - the part mesh, the timed toolpath and the estimated cycle time
 - whether the program may be downloaded
@@ -306,7 +347,8 @@ flowchart TD
 | Decided by Claude | Decided by plain code |
 |---|---|
 | Which operations, in what order | Finding holes and measuring them |
-| Reading the drawing's hole callouts | Converting them to mm, and whether a hole must be reamed |
+| Reading the drawing's hole callouts | Converting them to mm, and whether a hole must be reamed or tapped |
+| Which holes to tap, when asked | Whether the tap fits, its drill, and its feed |
 | Which tool for each hole | Spindle speeds and feed rates |
 | When to peck drill | Every number in the G-code |
 | Explaining each choice | Whether the plan is acceptable |
@@ -337,6 +379,8 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 | **Plain drilling (G81)** | Feed to depth in one go, then retract |
 | **Peck drilling (G83)** | Drill in steps, pulling out between them to clear chips |
 | **Reaming (G85)** | Finishing a slightly undersized drilled hole to an exact size with a reamer, feeding in and back out |
+| **Tapping (G84)** | Cutting a thread in a drilled hole: feed in, reverse the spindle, feed out. Rigid tapping (`M29`) locks the feed to the spindle. |
+| **Thread callout** | A thread's size and pitch on the drawing, for example `M6x1.0-6H` (6 mm, 1 mm per turn) or `1/4-20 UNC` (20 threads per inch) |
 | **Tolerance callout** | The size and allowed variation of a feature on the drawing, for example `Ø.250 +.003 -.000`: 0.250" to 0.253" |
 | **R plane** | The height just above the surface where a drilling cycle switches from rapid to feed |
 | **G98 / G99** | After each hole, return to the starting height (G98) or only to the R plane (G99) |
@@ -350,14 +394,15 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 
 ## What it doesn't do
 
-- Holes only: no tapping, boring, pockets, chamfers or profiles. Reaming only to the reamer sizes in the library.
+- Holes only: no boring, thread milling, pockets, chamfers or profiles. Reaming and tapping only with the reamers and taps in the library.
+- A thread's depth on the drawing isn't read: blind holes are tapped to one thread short of the bottom.
 - One setup: the part is turned to whichever of its six sides has the most holes to drill, and holes on the other sides, or on angled faces, are skipped.
 - Programs are metric and Fanuc-style only, though inch parts and inch drills work.
 - Counterbored holes come out as two separate holes, one per diameter, drilled with a pointed drill. Claude warns when a flat floor is needed.
 - Tool reach isn't checked: a hole deep inside a box needs a tool and holder long enough to reach it without hitting the walls.
 - The rapid-move check looks at each move's start and end points, not the full path. Below the top of the part, it only knows surface heights at hole centers.
 - The cycle time is an estimate from typical machine values, not a measured run.
-- The speeds and feeds are unverified starting values, and the programs haven't been run on a machine. Nothing it produces should run without a machinist's review.
+- The speeds and feeds are unverified starting values, and the programs haven't been run on a machine, only through LinuxCNC's interpreter. Nothing it produces should run without a machinist's review.
 
 ---
 
@@ -373,3 +418,4 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 | Web page and 3D view | `web/src/App.jsx`, `web/src/Viewer.jsx` |
 | Tools, materials, machine | `data/*.json` |
 | Test parts, plans, reference program, bad-program set | `fixtures/` |
+| LinuxCNC prove-out | `scripts/linuxcnc_check.py` |
