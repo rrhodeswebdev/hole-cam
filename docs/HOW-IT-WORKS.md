@@ -194,14 +194,65 @@ It's an estimate:
 
 ---
 
+## 7. Changing the plan in plain English (Claude)
+
+Under the plan, a machinist can type a change the way they'd say it to a programmer: "do the deep holes first", "peck every hole, 2 mm at a time", "we can't skip spot drilling?". A few example requests are one click away.
+
+Claude gets the job, the current plan and the request. It returns a revised plan plus a one- or two-sentence summary of what it changed, or why it couldn't. The revised plan then goes through exactly the same steps as a new one: validation (with one retry), G-code, safety checks, cycle time and playback.
+
+```mermaid
+sequenceDiagram
+    participant M as Machinist
+    participant B as Browser
+    participant A as POST /jobs/revise
+    participant C as Claude
+    participant V as Validate + checks
+
+    M->>B: "Peck every hole, 2 mm at a time"
+    B->>A: STEP file, material, current plan, request
+    A->>A: find holes again from the STEP file
+    A->>C: job + current plan + request
+    C-->>A: revised plan + summary
+    A->>V: validate, write G-code, safety checks, cycle time
+    alt accepted
+        V-->>B: new plan and program
+        B->>M: what changed, cycle time before → after, Undo
+    else rejected twice
+        V-->>B: errors
+        B->>M: Claude's summary and the errors, working plan kept
+    end
+```
+
+Claude is told which rules the code enforces, so it keeps them even when asked not to:
+- every drilled hole is spotted first
+- each drill matches its hole's diameter, and tools come from the library
+- holes deeper than 3× their diameter are peck drilled
+- the drill's flutes reach the full depth
+- every hole the library can drill is drilled.
+
+Everything else is a default the machinist can override: peck size, pecking shallow holes, spot depth, order and grouping.
+
+The page then shows:
+- the request and Claude's summary
+- the operations removed (struck through) and added, or "same operations in a new order"
+- cycle time and tool changes before → after, and whether the safety checks pass
+- an **Undo** button that puts the previous plan back.
+
+If the revision is rejected, the working plan and its program stay as they were. The page shows what Claude tried and why it was rejected.
+
+The page sends the STEP file again with each request instead of the hole list. The hole geometry drives every depth in the G-code, so the server measures it itself rather than trusting the browser. The current plan is sent only as context for Claude, and the revised plan is validated like any other.
+
+---
+
 ## How the pieces connect
 
-The web page sends the STEP file and material to one endpoint, `POST /jobs`. The server runs all six stages and returns everything in one response:
+The web page sends the STEP file and material to `POST /jobs`, or to `POST /jobs/revise` with the current plan and a requested change. The server runs all six stages and returns everything in one response:
 - the holes and skipped holes
 - the plan, or the reasons it was rejected
 - the G-code and the safety check results
 - the part mesh, the timed toolpath and the estimated cycle time
-- whether the program may be downloaded.
+- whether the program may be downloaded
+- for a revision, Claude's summary of the change.
 
 Nothing is stored between requests.
 
@@ -230,6 +281,7 @@ flowchart TD
 | When to peck drill | Every number in the G-code |
 | Explaining each choice | Whether the plan is acceptable |
 | Spotting things worth a warning | Whether the program is safe to run |
+| Applying a machinist's requested change, or explaining why it can't | Which rules a change may not break |
 
 Claude's output passes through three layers before anything can reach a machine:
 1. **The schema** fixes the format and the list of real tools.

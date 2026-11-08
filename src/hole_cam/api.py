@@ -3,6 +3,7 @@
 Run: uv run uvicorn hole_cam.api:app --reload
 """
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -14,9 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from hole_cam.checks import check, context_for
 from hole_cam.gcode import _load, generate
 from hole_cam.holes import find_holes
-from hole_cam.planner import plan_job
+from hole_cam.planner import plan_job, revise_plan
 
 MAX_UPLOAD = 20 * 1024 * 1024  # bytes
+MAX_REQUEST = 500  # characters in a plan change request
 WEB = Path(__file__).parents[2] / "web" / "dist"
 TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
 
@@ -35,6 +37,37 @@ def materials():
 @app.post("/jobs")
 def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropic_client)):
     # Sync on purpose: the CAD kernel and the Claude call block, so FastAPI runs this in a worker thread.
+    found, mesh, name = _read_part(file, material)
+    job = _job(found, mesh)
+    if not found["holes"]:
+        job["plan_errors"] = ["No holes that can be drilled from the top were found."]
+        return job
+    result = _call_planner(plan_job, found, MATERIALS[material], TOOLS, MACHINE, client=client)
+    return _finish(job, found, result, material, name)
+
+
+@app.post("/jobs/revise")
+def revise_job(file: UploadFile, material: str = Form(), plan: str = Form(), request: str = Form(),
+               client=Depends(anthropic_client)):
+    """Change a plan as the machinist asks. The part is uploaded again because the holes drive the G-code;
+    the current plan only serves as context for Claude, and the revision is validated like any plan."""
+    request = request.strip()
+    if not request or len(request) > MAX_REQUEST:
+        raise HTTPException(422, f"Describe the change in 1 to {MAX_REQUEST} characters.")
+    try:
+        current = json.loads(plan)
+    except ValueError:
+        current = None
+    if not isinstance(current, dict) or not isinstance(current.get("operations"), list):
+        raise HTTPException(422, "The current plan isn't valid. Plan the job again.")
+    found, mesh, name = _read_part(file, material)
+    if not found["holes"]:
+        raise HTTPException(422, "No holes that can be drilled from the top were found.")
+    result = _call_planner(revise_plan, found, MATERIALS[material], TOOLS, MACHINE, current, request, client=client)
+    return {**_finish(_job(found, mesh), found, result, material, name), "summary": result["summary"]}
+
+
+def _read_part(file, material):
     if material.startswith("_") or material not in MATERIALS:
         raise HTTPException(422, f"Unknown material {material!r}. Choose one of: {', '.join(materials())}.")
     name = Path(file.filename or "part").name
@@ -52,18 +85,20 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
             mesh = _mesh(path, found["part"]["top_z"])
         except Exception:
             raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
+    return found, mesh, name
 
-    job = {**found, "mesh": mesh, "plan": None, "plan_errors": [],
-           "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
-           "tool_numbers": {t["id"]: t["number"] for t in TOOLS},
-           "tool_info": {t["number"]: {k: t[k] for k in ("type", "diameter", "point_angle", "flute_length")} for t in TOOLS},
-           "cycle_seconds": None}
-    if not found["holes"]:
-        job["plan_errors"] = ["No holes that can be drilled from the top were found."]
-        return job
 
+def _job(found, mesh):
+    return {**found, "mesh": mesh, "plan": None, "plan_errors": [],
+            "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
+            "tool_numbers": {t["id"]: t["number"] for t in TOOLS},
+            "tool_info": {t["number"]: {k: t[k] for k in ("type", "diameter", "point_angle", "flute_length")} for t in TOOLS},
+            "cycle_seconds": None}
+
+
+def _call_planner(fn, *args, client):
     try:
-        result = plan_job(found, MATERIALS[material], TOOLS, MACHINE, client=client)
+        return fn(*args, client=client)
     except (RuntimeError, anthropic.APIError) as e:
         raise HTTPException(502, f"The planner failed: {e}")
     except TypeError as e:
@@ -71,10 +106,12 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
         if "authentication" not in str(e):
             raise
         raise HTTPException(503, "Claude API credentials aren't set up on the server. Set ANTHROPIC_API_KEY.")
+
+
+def _finish(job, found, result, material, name):
     job.update(plan=result["plan"], plan_errors=result["errors"])
     if result["errors"]:
         return job
-
     gcode = generate(found, result["plan"], TOOLS, MATERIALS[material], MACHINE, name=Path(name).stem)
     trace = []
     job.update(gcode=gcode, findings=check(gcode, MACHINE, **context_for(found), trace=trace), toolpath=trace,

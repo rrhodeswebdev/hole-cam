@@ -42,21 +42,23 @@ flowchart LR
 
    The checks work on any Fanuc-style drilling program, not just this tool's.
 6. **Preview:** the part and toolpath in 3D. The toolpath is drawn by reading back the generated G-code, so it shows what the machine will do, not what was intended. The view plays the program back: the drill moves through every move, including each peck out to clear chips, and the holes fill in as they're drilled. The G-code line being run is highlighted. The same moves give an estimated cycle time (about 32 s for the test plate).
+7. **Change the plan in plain English:** a machinist types a change like "do the deep holes first" or "peck every hole, 2 mm at a time". Claude revises the plan and explains what it changed, or why it couldn't. The revision is validated and checked like any plan. The page shows the operations added and removed and the cycle time before and after, with Undo.
 
 ## Where the AI is, and where it isn't
 
-Claude does the part that's judgment: choosing operations and order, matching tools to holes, deciding when to peck, and explaining its choices in a machinist's terms.
+Claude does the part that's judgment: choosing operations and order, matching tools to holes, deciding when to peck, and explaining its choices in a machinist's terms. It also takes requested changes in plain English, and pushes back when a request would break a shop rule.
 
 Anything that can break a tool if it's wrong is plain, tested code: geometry, feeds and speeds, G-code syntax and the safety checks. The model's output is treated as a proposal. Its format is enforced by a schema, its tool IDs are limited to the real library, and every plan is validated before any G-code exists.
 
 ## How I know it works
 
-- **65 automated tests:** `uv run pytest`.
+- **72 automated tests:** `uv run pytest`.
 - **Hole finding** is tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
 - **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
+- **Plan changes, live:** on the mixed plate, "do the deep holes first" was reordered without adding a tool change. "Skip spot drilling to save time" was declined with the reason, plus a cheaper change that was allowed. "Peck every hole, 2 mm at a time" was applied, with two operations merged, and the cycle time went from 0:35 to 0:40. Each took 6–9 seconds.
 - **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on.
 
 **Not verified yet:**

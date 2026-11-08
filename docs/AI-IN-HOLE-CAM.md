@@ -1,6 +1,6 @@
 # How AI is used in Hole-CAM
 
-Hole-CAM makes **one call to Claude per part**, plus at most one retry. That call turns a list of holes into a drilling plan: which operations, which tools, which drilling cycle, in what order, and why. Everything else in the app is ordinary code. Claude's plan is treated as a proposal: its format is fixed by a schema, plain code validates it, and the final program is checked for crashes before anyone can download it.
+Hole-CAM makes **one call to Claude per plan**, plus at most one retry. That call turns a list of holes into a drilling plan: which operations, which tools, which drilling cycle, in what order, and why. A machinist can then ask for changes in plain English, and each change is one more call ([Revising a plan](#revising-a-plan)). Everything else in the app is ordinary code. Claude's plan is treated as a proposal: its format is fixed by a schema, plain code validates it, and the final program is checked for crashes before anyone can download it.
 
 All the code described here is in `src/hole_cam/planner.py`.
 
@@ -200,14 +200,44 @@ Costs are estimated from the token counts at Opus 5.5 list prices ($4 per millio
 
 ---
 
+## Revising a plan
+
+`revise_plan()` reuses the same prompt, schema, validation and retry as the first plan, with three differences:
+- **The message** contains the job, the current plan and the machinist's request.
+- **The schema** adds a required `summary` field: one or two sentences to the machinist saying what changed, or why it couldn't.
+- **The system prompt** gets an extra paragraph separating the rules the code enforces from the defaults the machinist may override:
+
+```text
+Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled.
+Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
+If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
+```
+
+The revised plan is never trusted more than the first one. It goes through the validator, the G-code writer and the safety checks. The holes are measured again from the uploaded STEP file, not taken from the browser.
+
+Live results on the mixed plate (2026-11-07):
+
+| Request | Time | What Claude did | Cycle time |
+|---|---|---|---|
+| "Do the deep holes first" | 8.7 s | Moved the deep 5 mm hole ahead of the shallow one, keeping the same drill loaded so no tool change was added | 0:35 → 0:35 |
+| "Skip spot drilling to save time" | 6.8 s | Declined: every drilled hole must be spotted first. Suggested merging the two spot operations instead, and noted the chamfer that would leave | unchanged |
+| "Peck every hole, 2 mm at a time" | 6.2 s | Switched every drill operation to G83 with 2 mm pecks, and merged the two 5 mm operations now that they match | 0:35 → 0:40 |
+
+Token counts weren't recorded for these runs. The prompt is the first plan's prompt plus the current plan, so cost should be close to the first plan's, about $0.03 per request.
+
+---
+
 ## What the live runs taught us
 
-Running against the real model found two problems the fake-client tests couldn't:
+Running against the real model found three problems the fake-client tests couldn't:
 
 1. **Contradictory input caused a false warning.** Hole heights were sent in CAD coordinates while the machine settings said Z0 is the top of the part. Claude flagged it. The fix was to send hole heights in program coordinates. A test now checks this, and the warning is gone.
 2. **Claude's plans exposed a G-code inefficiency.** Claude split the spot drill into two operations with different depths, and the 5 mm drill into G81 and G83 operations. Both splits are correct, but the generator did a full tool change and trip home between operations using the same tool. The generator now keeps the tool loaded.
 
-Both are good examples of why a live model run belongs in testing, not just mocks.
+3. **Claude treated defaults as rules.** In the first version of the revision prompt, "peck every hole, 2 mm at a time" was refused: Claude read the planning guidance ("peck about 1× the diameter", "use G83 past 3×D") as hard rules. The validator doesn't enforce either. The prompt now lists exactly what the code checks and names the rest as overridable defaults, and the same request is applied.
+
+All three are good examples of why a live model run belongs in testing, not just mocks.
 
 ---
 
@@ -232,6 +262,7 @@ The automated tests never call the real API. A `FakeClient` in `tests/test_plann
 - giving up after one retry, and returning the errors
 - that a refusal raises an error instead of returning a plan
 - that hole heights reach the prompt in program coordinates
+- that a revision sends the current plan and the request, requires a summary, and is retried and rejected like any plan when it breaks a rule
 - the full API flow (`tests/test_api.py`): a good plan produces G-code, a bad plan produces errors, and refusals and missing credentials give the right error codes.
 
 Live behavior is checked separately, by running real parts as above.

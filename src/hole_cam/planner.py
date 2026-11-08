@@ -28,6 +28,14 @@ You get the holes found in the CAD model, the material, the tool library and the
 - Only use tool IDs from the library. Give each operation a one-sentence reason a machinist would agree with.
 Speeds and feeds are calculated elsewhere; do not include them."""
 
+REVISE = """
+
+Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled.
+Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
+If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
+summary: one or two sentences to the machinist saying what you changed, or why you couldn't."""
+
 
 def plan_schema(tools):
     return {
@@ -57,25 +65,43 @@ def plan_schema(tools):
     }
 
 
-def plan_job(found, material, tools, machine, client=None):
-    """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors}."""
-    client = client or anthropic.Anthropic()
+def _job(found, material, tools, machine):
     # Give hole heights in program coordinates (G54 Z0 = part top) so they match the machine note;
     # model coordinates made Claude warn that every depth would be off.
     z0 = found["part"]["top_z"]
     holes = [{**h, "top_z": round(h["top_z"] - z0, 3)} for h in found["holes"]]
-    job = {"material": material["name"], "holes": holes, "skipped": found["skipped"],
-           "tools": tools, "machine": machine}
-    messages = [{"role": "user", "content": "Plan this job:\n" + json.dumps(job, indent=1)}]
+    return json.dumps({"material": material["name"], "holes": holes, "skipped": found["skipped"],
+                       "tools": tools, "machine": machine}, indent=1)
 
+
+def plan_job(found, material, tools, machine, client=None):
+    """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors}."""
+    content = "Plan this job:\n" + _job(found, material, tools, machine)
+    return _ask(client, SYSTEM, content, plan_schema(tools), found, tools, machine)
+
+
+def revise_plan(found, material, tools, machine, plan, request, client=None):
+    """Ask Claude to change `plan` as the machinist requests. Returns {plan, errors, summary}."""
+    schema = plan_schema(tools)
+    schema["properties"]["summary"] = {"type": "string"}
+    schema["required"].append("summary")
+    content = (f"The job:\n{_job(found, material, tools, machine)}\n\nCurrent plan:\n{json.dumps(plan, indent=1)}"
+               f"\n\nThe machinist asks:\n{request}")
+    result = _ask(client, SYSTEM + REVISE, content, schema, found, tools, machine)
+    return {**result, "summary": result["plan"].pop("summary")}
+
+
+def _ask(client, system, content, schema, found, tools, machine):
+    client = client or anthropic.Anthropic()
+    messages = [{"role": "user", "content": content}]
     for attempt in range(2):
         response = client.beta.messages.create(
             model=MODEL,
             max_tokens=16000,
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-            system=SYSTEM.format(peck_ratio=machine["peck_ratio"]),
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": plan_schema(tools)}},
+            system=system.format(peck_ratio=machine["peck_ratio"]),
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": schema}},
             messages=messages,
         )
         if response.stop_reason != "end_turn":

@@ -3,6 +3,13 @@ import Viewer, { clock } from './Viewer.jsx'
 import { toolColor } from './colors.js'
 
 const fmt = (n) => Number(n.toFixed(3)).toString()
+const EXAMPLES = ['Do the deep holes first', 'Peck every hole, 2 mm at a time', 'Spot drill 1 mm deep', 'Skip spot drilling to save time']
+
+// One line per operation, used for the plan list and to compare plans.
+const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
+  ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
+  : `T${toolNumbers[op.tool_id]} Drill · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
+const toolChanges = (job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
 
 function errorText(detail, status) {
   if (typeof detail === 'string') return detail
@@ -17,6 +24,8 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [activeLine, setActiveLine] = useState(null)
+  const [planned, setPlanned] = useState(null) // the file and material the current job came from
+  const [revision, setRevision] = useState(null) // { request, summary, previous } or { request, summary, errors }
 
   useEffect(() => {
     fetch('/materials')
@@ -32,6 +41,7 @@ export default function App() {
     setError(null)
     setJob(null)
     setActiveLine(null)
+    setRevision(null)
     const body = new FormData()
     body.append('file', file)
     body.append('material', material)
@@ -40,6 +50,7 @@ export default function App() {
       const data = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(errorText(data.detail, r.status))
       setJob(data)
+      setPlanned({ file, material })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -47,9 +58,44 @@ export default function App() {
     }
   }
 
+  async function revise(request) {
+    setBusy(true)
+    setError(null)
+    const body = new FormData()
+    body.append('file', planned.file)
+    body.append('material', planned.material)
+    body.append('plan', JSON.stringify(job.plan))
+    body.append('request', request)
+    try {
+      const r = await fetch('/jobs/revise', { method: 'POST', body })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(errorText(data.detail, r.status))
+      if (data.plan_errors.length) {
+        // Keep the working plan; show what Claude tried and why it was rejected.
+        setRevision({ request, summary: data.summary, errors: data.plan_errors })
+      } else {
+        setRevision({ request, summary: data.summary, previous: job })
+        setActiveLine(null)
+        setJob(data)
+      }
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function undo() {
+    setJob(revision.previous)
+    setActiveLine(null)
+    setRevision(null)
+  }
+
   function download() {
     const url = URL.createObjectURL(new Blob([job.gcode], { type: 'text/plain' }))
-    const a = Object.assign(document.createElement('a'), { href: url, download: file.name.replace(/\.(step|stp)$/i, '') + '.nc' })
+    const a = Object.assign(document.createElement('a'), { href: url, download: planned.file.name.replace(/\.(step|stp)$/i, '') + '.nc' })
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -78,7 +124,10 @@ export default function App() {
         </form>
 
         {error && <p className="alert" role="alert">{error}</p>}
-        {job && <Results job={job} onDownload={download} activeLine={activeLine} />}
+        {job && (
+          <Results job={job} onDownload={download} activeLine={activeLine}
+            change={<ChangePlan job={job} busy={busy} revision={revision} onRevise={revise} onUndo={undo} />} />
+        )}
       </aside>
 
       <main className="stage">
@@ -91,9 +140,8 @@ export default function App() {
   )
 }
 
-function Results({ job, onDownload, activeLine }) {
-  const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers, toolpath, cycle_seconds } = job
-  const toolChanges = toolpath.filter((m) => m.kind === 'tool_change').length
+function Results({ job, onDownload, activeLine, change }) {
+  const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers, cycle_seconds } = job
   return (
     <>
       <section className="card">
@@ -120,7 +168,7 @@ function Results({ job, onDownload, activeLine }) {
                   <span className="swatch" style={{ background: toolColor(t) }} aria-hidden="true" />
                   <div>
                     <strong>T{t} {op.op === 'spot_drill' ? 'Spot drill' : 'Drill'}</strong>{' '}
-                    <span className="muted">{op.tool_id}{op.op === 'drill' && ` · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''}`} · holes {op.hole_ids.join(', ')}</span>
+                    <span className="muted">{op.tool_id} · {opLabel(op, tool_numbers).split(' · ').slice(1).join(' · ')}</span>
                     <p className="small">{op.reason}</p>
                   </div>
                 </li>
@@ -130,6 +178,8 @@ function Results({ job, onDownload, activeLine }) {
           {(plan.warnings ?? []).map((w, i) => <p key={i} className="note small">{w}</p>)}
         </section>
       )}
+
+      {plan && change}
 
       {plan_errors.length > 0 && (
         <section className="card" role="alert">
@@ -144,7 +194,7 @@ function Results({ job, onDownload, activeLine }) {
           {findings.length === 0
             ? <p className="ok">All 6 checks passed.</p>
             : <ul className="findings">{findings.map((f, i) => <li key={i} className="small"><strong>Line {f.line}</strong> {f.message}</li>)}</ul>}
-          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {toolChanges} tool change{toolChanges === 1 ? '' : 's'}</p>
+          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {toolChanges(job)} tool change{toolChanges(job) === 1 ? '' : 's'}</p>
           <button onClick={onDownload} disabled={!export_ok}>Download .nc</button>
           {!export_ok && <p className="muted small">Download is blocked until every check passes.</p>}
           <details>
@@ -170,5 +220,71 @@ function Program({ gcode, activeLine }) {
         <span key={i} className={i + 1 === activeLine ? 'active' : undefined}>{line}{'\n'}</span>
       ))}
     </pre>
+  )
+}
+
+// Ask Claude to change the plan in plain English, and show what changed.
+function ChangePlan({ job, busy, revision, onRevise, onUndo }) {
+  const [request, setRequest] = useState('')
+  async function submit(e) {
+    e.preventDefault()
+    if (await onRevise(request.trim())) setRequest('')
+  }
+  return (
+    <section className="card">
+      <h2>Change the plan</h2>
+      <form onSubmit={submit} className="change">
+        <label className="sr-only" htmlFor="change-request">What should change?</label>
+        <textarea id="change-request" rows={2} maxLength={500} value={request} placeholder="e.g. Do the deep holes first"
+          onChange={(e) => setRequest(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form.requestSubmit() } }} />
+        <div className="examples">
+          {EXAMPLES.map((x) => <button key={x} type="button" className="chip" onClick={() => setRequest(x)} disabled={busy}>{x}</button>)}
+        </div>
+        <button type="submit" disabled={busy || !request.trim()}>{busy ? 'Revising…' : 'Revise with Claude'}</button>
+      </form>
+      {revision && <RevisionResult job={job} revision={revision} onUndo={onUndo} />}
+    </section>
+  )
+}
+
+function RevisionResult({ job, revision, onUndo }) {
+  const { request, summary, previous, errors } = revision
+  if (errors) {
+    return (
+      <div className="revision" role="alert">
+        <p className="small muted">You asked: “{request}”</p>
+        <p><strong>Claude:</strong> {summary}</p>
+        <p className="bad small"><strong>Rejected by the validator</strong>, so your plan is unchanged:</p>
+        <ul>{errors.map((e, i) => <li key={i} className="small">{e}</li>)}</ul>
+      </div>
+    )
+  }
+  const before = previous.plan.operations.map((op) => opLabel(op, previous.tool_numbers))
+  const after = job.plan.operations.map((op) => opLabel(op, job.tool_numbers))
+  const removed = before.filter((l) => !after.includes(l))
+  const added = after.filter((l) => !before.includes(l))
+  const reordered = !removed.length && !added.length && before.join() !== after.join()
+  const dt = job.cycle_seconds - previous.cycle_seconds
+  return (
+    <div className="revision" aria-live="polite">
+      <p className="small muted">You asked: “{request}”</p>
+      <p><strong>Claude:</strong> {summary}</p>
+      {removed.length + added.length > 0 && (
+        <ul className="diff">
+          {removed.map((l) => <li key={'-' + l} className="removed"><span aria-hidden="true">−</span><span className="sr-only">Removed:</span> {l}</li>)}
+          {added.map((l) => <li key={'+' + l} className="added"><span aria-hidden="true">+</span><span className="sr-only">Added:</span> {l}</li>)}
+        </ul>
+      )}
+      {reordered && <p className="small">Same operations in a new order.</p>}
+      {!removed.length && !added.length && !reordered && <p className="small">No change to the operations.</p>}
+      <p className="small">
+        Cycle time {clock(previous.cycle_seconds)} → <strong>{clock(job.cycle_seconds)}</strong>
+        {Math.abs(dt) >= 0.5 && <span className={dt < 0 ? 'ok-text' : 'bad'}> ({dt < 0 ? '−' : '+'}{Math.round(Math.abs(dt))} s)</span>}
+        {' · '}tool changes {toolChanges(previous)} → {toolChanges(job)}
+        {' · '}{job.findings.length ? <span className="bad">safety checks failed</span> : <span className="ok-text">checks pass</span>}
+      </p>
+      <button type="button" className="secondary" onClick={onUndo}>Undo</button>
+    </div>
   )
 }

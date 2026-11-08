@@ -7,7 +7,7 @@ import pytest
 
 from hole_cam.gcode import _load
 from hole_cam.holes import find_holes
-from hole_cam.planner import plan_job, validate
+from hole_cam.planner import plan_job, revise_plan, validate
 
 FIX = Path(__file__).parent.parent / "fixtures"
 TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
@@ -104,3 +104,25 @@ def test_gives_up_after_one_retry_and_returns_the_errors():
 def test_refusal_is_an_error_not_a_plan():
     with pytest.raises(RuntimeError, match="refusal"):
         plan_job(MIXED, MATERIALS["6061"], TOOLS, MACHINE, client=FakeClient(GOOD, stop_reason="refusal"))
+
+
+def test_revision_sends_the_current_plan_and_request_and_returns_the_summary():
+    revised = copy.deepcopy(GOOD)
+    revised["operations"][2:4] = revised["operations"][3:1:-1]  # deep 6.8 mm holes before the 5 mm one
+    client = FakeClient({**revised, "summary": "Moved the 6.8 mm holes first."})
+    result = revise_plan(MIXED, MATERIALS["6061"], TOOLS, MACHINE, GOOD, "Do the deep holes first", client=client)
+    assert result == {"plan": revised, "errors": [], "summary": "Moved the 6.8 mm holes first."}
+    prompt = client.calls[0]["messages"][0]["content"]
+    assert "Current plan:\n" + json.dumps(GOOD, indent=1) in prompt and prompt.endswith("Do the deep holes first")
+    assert "summary" in client.calls[0]["output_config"]["format"]["schema"]["required"]
+    assert "Revising a plan" in client.calls[0]["system"]
+
+
+def test_revision_that_breaks_a_rule_is_retried_then_rejected():
+    unspotted = copy.deepcopy(GOOD)
+    del unspotted["operations"][0]  # "skip spot drilling"
+    bad = {**unspotted, "summary": "Removed spot drilling."}
+    client = FakeClient(bad, copy.deepcopy(bad))
+    result = revise_plan(MIXED, MATERIALS["6061"], TOOLS, MACHINE, GOOD, "Skip spot drilling", client=client)
+    assert len(client.calls) == 2 and any("before it is spotted" in e for e in result["errors"])
+    assert result["summary"] == "Removed spot drilling." and "summary" not in result["plan"]

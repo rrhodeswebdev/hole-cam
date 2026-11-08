@@ -1,4 +1,5 @@
 import copy
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -72,6 +73,34 @@ def test_missing_credentials_is_a_clear_503():
 ])
 def test_bad_uploads_are_rejected(api, kw, status):
     assert post(api(), **kw).status_code == status
+
+
+def revise(client, request="Do the deep holes first", plan=None):
+    return client.post("/jobs/revise", files={"file": ("mixed.step", MIXED)},
+                       data={"material": "6061", "plan": json.dumps(plan or GOOD), "request": request})
+
+
+def test_revision_returns_a_checked_program_and_claudes_summary(api):
+    revised = copy.deepcopy(GOOD)
+    revised["operations"][2:4] = revised["operations"][3:1:-1]
+    r = revise(api({**revised, "summary": "Moved the 6.8 mm holes first."}))
+    assert r.status_code == 200, r.text
+    job = r.json()
+    assert job["summary"] == "Moved the 6.8 mm holes first." and job["plan"] == revised
+    assert job["export_ok"] is True and job["cycle_seconds"] > 0
+    assert job["gcode"].index("T8 M06") < job["gcode"].index("G83 X65.")  # 6.8 mm holes now before hole 4
+
+
+def test_rejected_revision_gives_errors_and_no_program(api):
+    bad = copy.deepcopy(GOOD)
+    del bad["operations"][0]
+    job = revise(api({**bad, "summary": "Removed spot drilling."}, {**bad, "summary": "Removed spot drilling."})).json()
+    assert job["plan_errors"] and job["gcode"] is None and job["summary"] == "Removed spot drilling."
+
+
+@pytest.mark.parametrize("kw", [{"request": "  "}, {"request": "x" * 501}, {"plan": ["not", "a", "plan"]}])
+def test_bad_revision_requests_are_rejected(api, kw):
+    assert revise(api(), **kw).status_code == 422
 
 
 def test_part_name_cannot_break_out_of_the_gcode_comment():
