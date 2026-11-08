@@ -23,7 +23,7 @@ export default function App() {
   const [material, setMaterial] = useState('6061')
   const [file, setFile] = useState(null)
   const [job, setJob] = useState(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(null) // null, 'plan' or 'revise'
   const [error, setError] = useState(null)
   const [activeLine, setActiveLine] = useState(null)
   const [planned, setPlanned] = useState(null) // the file and material the current job came from
@@ -39,7 +39,7 @@ export default function App() {
   async function submit(e) {
     e.preventDefault()
     if (!file) return
-    setBusy(true)
+    setBusy('plan')
     setError(null)
     setJob(null)
     setActiveLine(null)
@@ -56,12 +56,12 @@ export default function App() {
     } catch (err) {
       setError(err.message)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
   async function revise(request) {
-    setBusy(true)
+    setBusy('revise')
     setError(null)
     const body = new FormData()
     body.append('file', planned.file)
@@ -85,7 +85,7 @@ export default function App() {
       setError(err.message)
       return false
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -121,8 +121,8 @@ export default function App() {
               {Object.entries(materials).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           </label>
-          <button type="submit" disabled={!file || busy}>{busy ? 'Planning…' : 'Plan the job'}</button>
-          <p className="muted small" aria-live="polite">{busy && 'Finding holes and asking Claude for a plan. This can take a minute.'}</p>
+          <button type="submit" disabled={!file || busy}>{busy === 'plan' ? 'Planning…' : 'Plan the job'}</button>
+          <p className="muted small">{busy === 'plan' && 'Finding holes and asking Claude for a plan. This can take a minute.'}</p>
         </form>
 
         {error && <p className="alert" role="alert">{error}</p>}
@@ -136,7 +136,8 @@ export default function App() {
         {job
           // setActiveLine is stable, so the viewer's scene is not rebuilt on every line change
           ? <Viewer job={job} onLine={setActiveLine} />
-          : <div className="empty"><p>Upload a part to see it here with its toolpath.</p></div>}
+          : !busy && <div className="empty"><p>Upload a part to see it here with its toolpath.</p></div>}
+        {busy && <Working what={busy} />}
       </main>
     </div>
   )
@@ -248,7 +249,7 @@ function ChangePlan({ job, busy, revision, onRevise, onUndo }) {
         <div className="examples">
           {EXAMPLES.map((x) => <button key={x} type="button" className="chip" onClick={() => setRequest(x)} disabled={busy}>{x}</button>)}
         </div>
-        <button type="submit" disabled={busy || !request.trim()}>{busy ? 'Revising…' : 'Revise with Claude'}</button>
+        <button type="submit" disabled={busy || !request.trim()}>{busy === 'revise' ? 'Revising…' : 'Revise with Claude'}</button>
       </form>
       {revision && <RevisionResult job={job} revision={revision} onUndo={onUndo} />}
     </section>
@@ -292,6 +293,23 @@ function RevisionResult({ job, revision, onUndo }) {
         {' · '}{job.findings.length ? <span className="bad">safety checks failed</span> : <span className="ok-text">checks pass</span>}
       </p>
       <button type="button" className="secondary" onClick={onUndo}>Undo</button>
+    </div>
+  )
+}
+
+// Over the 3D area while Claude works: what's happening and how long it's taken.
+function Working({ what }) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const start = Date.now()
+    const id = setInterval(() => setSeconds(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div className={`working ${what}`}>
+      <span className="spinner" aria-hidden="true" />
+      <p role="status">{what === 'plan' ? 'Finding holes and asking Claude for a plan' : 'Claude is revising the plan'}</p>
+      <p className="small muted-dark" aria-hidden="true">{clock(seconds)} · usually under a minute</p>
     </div>
   )
 }

@@ -4,8 +4,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { toolColor } from './colors.js'
 
-const SPEEDS = [0.5, 1, 2, 5]
-const DEFAULT_SPEED = 1
+const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5]
+const DEFAULT_SPEED = 1 // real machine time
 const HELIX = (30 * Math.PI) / 180 // flute helix angle of a standard jobber drill
 const FLUTE_DEPTH = 0.72 // how far the flutes cut in, as a fraction of the radius
 const SPIN = 3 // spindle turns per second on screen (the real rpm would just flicker)
