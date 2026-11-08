@@ -39,7 +39,8 @@ sequenceDiagram
 
 | Claude decides | Plain code decides |
 |---|---|
-| Which operations to run (spot drill, drill) and in what order | Finding the holes and measuring them |
+| Which operations to run (spot drill, drill, ream) and in what order | Finding the holes and measuring them |
+| What the drawing's hole callouts say, and which holes they point at | Converting them to mm, and whether a hole needs reaming |
 | Which drill goes with each hole | Spindle speeds and feed rates |
 | Plain drilling (G81) or peck drilling (G83), and the peck depth | Every coordinate and number in the G-code |
 | How deep to spot each hole | Whether the plan is acceptable |
@@ -54,18 +55,22 @@ The split follows one rule: **anything that can break a tool or crash the machin
 
 ### The system prompt
 
-This is sent unchanged with every request. The `{peck_ratio}` is filled in from `data/machine.json`, which currently sets it to 3.
+This is sent unchanged with every request. `{peck_ratio}` and `{drill_oversize}` are filled in from `data/machine.json`, which currently sets them to 3 and 0.1.
 
 ```text
 You are a CNC programmer planning hole-making on a 3-axis vertical mill. One setup, parts are drilled from the top.
 
-You get the holes found in the CAD model, the material, the tool library and the machine limits. Return a plan:
+You get the holes found in the CAD model, the material, the tool library and the machine limits, and sometimes the part's engineering drawing as a PDF. Return a plan:
 - Spot drill every hole you will drill, before drilling it. For a spot drill operation, set depth (mm below the hole top) so the spot cone is a little smaller than the drill. Use cycle G81 and peck 0.
 - Drill each hole with the library drill whose diameter matches the hole. If no drill matches, do not drill that hole; add a warning naming the hole and what it would need (a reamer, a boring bar, helical interpolation).
 - Use G83 peck drilling when the hole is deeper than {peck_ratio} x its diameter. Peck about 1 x the drill diameter. Otherwise use G81 with peck 0. For drill operations, set depth to 0 (the depth comes from the model).
 - Group holes that share a tool and cycle into one operation to keep tool changes down.
 - Only use tool IDs from the library. Give each operation a one-sentence reason a machinist would agree with.
 Speeds and feeds are calculated elsewhere; do not include them.
+
+The drawing, when there is one:
+- Read the hole callouts. For each callout that points at holes in this job, add an entry to drawing: the hole ids it points at, the callout as written (e.g. "4X Ø.250 +.003 -.001"), its units ("in" or "mm"), the nominal diameter, and the upper and lower deviations as signed numbers in those units (+.003 -.001 is 0.003 and -0.001; ±.010 is 0.010 and -0.010; for a fit like H7, its deviations). Match callouts to holes by size, count and where the leader points in each view. Leave out callouts for holes not in the job, such as holes on other faces. With no drawing, drawing is empty.
+- A hole whose upper deviation is under {drill_oversize} mm needs reaming, because a drill can cut that much oversize. Spot it, drill it with a library drill 0.1 to 0.4 mm smaller than the reamer, then ream it with the reamer that matches its diameter: op ream, cycle G85, depth 0, peck 0. If the library has no matching reamer or pre-drill, leave the hole out and warn.
 ```
 
 ### The job
@@ -82,7 +87,13 @@ The user message is `Plan this job:` followed by JSON with five parts:
 
 Hole heights are given in the program's coordinates, where Z0 is the top of the part. That matches the machine settings Claude also sees. An earlier version sent raw CAD coordinates instead, and Claude correctly warned that "every depth will be off by 25 mm". The G-code was actually fine, but the input contradicted itself (see [What the live runs taught us](#what-the-live-runs-taught-us)).
 
-Sending only the relevant tools keeps the prompt short as the library grows. The library has 36 drills, but the demo plate's prompt uses 3 tools and 1,893 input tokens. The schema's list of allowed tool IDs uses the same short list. Validation still checks against the whole library, so trimming the prompt can't let a bad tool choice through.
+### The drawing
+
+When a drawing is uploaded, the PDF goes in the same user message, as a document block ahead of the job text. The API gives Claude each page both as an image and as any text it contains. That matters for drawings like NIST's, where the dimensions are vector lines with no text layer: Claude reads them from the page image.
+
+Claude only transcribes. It gives each callout's numbers in the drawing's own units; code converts them to mm and applies the reaming rule. A model converting .003" to mm in its head is one more place for a slip, and the rule is a shop rule that belongs in code where it can be tested and changed.
+
+Sending only the relevant tools keeps the prompt short as the library grows. The library has 44 tools, but the demo plate's prompt uses 3 tools and 1,893 input tokens. The schema's list of allowed tool IDs uses the same short list. Validation still checks against the whole library, so trimming the prompt can't let a bad tool choice through.
 
 ---
 
@@ -92,14 +103,15 @@ The reply must match a JSON schema (`plan_schema()`), using the API's **structur
 
 | Field | Type | Constraint |
 |---|---|---|
-| `operations[].op` | text | must be `spot_drill` or `drill` |
+| `operations[].op` | text | must be `spot_drill`, `drill` or `ream` |
 | `operations[].tool_id` | text | **must be one of the tool IDs in the library** |
 | `operations[].hole_ids` | list of integers | |
 | `operations[].depth` | number | spot depth in mm, or 0 for drills |
-| `operations[].cycle` | text | must be `G81` or `G83` |
+| `operations[].cycle` | text | must be `G81`, `G83` or `G85` |
 | `operations[].peck` | number | peck depth in mm, or 0 |
 | `operations[].reason` | text | one sentence |
 | `warnings` | list of text | anything the programmer should know |
+| `drawing[]` | list | one entry per hole callout read off the drawing: `hole_ids`, `callout` as written, `units` (`in` or `mm`), `diameter`, `plus`, `minus`. Empty with no drawing. |
 
 Every field is required, and no extra fields are allowed. The tool list in the schema is built from the live tool library on each request, so Claude can't name a drill the shop doesn't have.
 
@@ -171,6 +183,8 @@ flowchart LR
 | No peck drilling on a deep hole, or a peck depth of 0 | Validation |
 | A drill too short for the hole | Validation, against the tool's flute length |
 | A spot cone much wider than the hole | Validation |
+| A drawing callout put on the wrong hole | Validation: its size must match the model's hole, a `4X` callout can't list five holes, and a hole can't have two callouts |
+| A tight-tolerance hole drilled to size, or reamed without a proper pre-drill | Validation, using the tolerance converted by code |
 | A plausible plan that still produces an unsafe program, including bugs in the G-code writer | The six safety checks on the final G-code |
 | Wrong speeds or feeds | Can't happen: Claude never provides them |
 
@@ -208,6 +222,9 @@ The NIST runs came after the tool library grew from 12 to 36 drills, which is wh
 |---|---|---|---|---|---|
 | Mixed plate, relevant tools only | 12.7 s | 1,893 | 1,258 | $0.033 | 1, valid |
 | NIST FTC-07, relevant tools only | 33.1 s | 3,303 | 3,320 | $0.080 | 1, valid |
+| NIST FTC-07 with its 4-page drawing | 63.0 s | 11,929 | 6,121 | $0.17 | 1, valid |
+
+The drawing adds about 8,600 input tokens, roughly 2,000 per page, and doubles the cost. On that run Claude read the six callouts for holes in this setup, left out the four for side holes, and planned the 8 Ø.250 +.003" holes as spot, 6.0 mm drill, 1/4" ream. The program passed all six checks.
 
 What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
@@ -222,7 +239,7 @@ What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
 ```text
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole the drawing tolerances tighter than {drill_oversize} mm is drilled 0.1 to 0.4 mm under and then reamed with G85; the drawing entries match the holes' diameters; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 ```
@@ -274,7 +291,8 @@ All five are good examples of why a live model run belongs in testing, not just 
 
 The automated tests never call the real API. A `FakeClient` in `tests/test_planner.py` stands in for the Anthropic client and returns canned plans. The tests check:
 
-- every validation rule, with one deliberately broken plan per rule
+- every validation rule, with one deliberately broken plan per rule, including the drawing and reaming rules (`tests/test_drawing.py`)
+- that a drawing reaches Claude as a PDF document block ahead of the job, on plans and revisions
 - that a rejected plan is retried once, with the errors in the retry message
 - giving up after one retry, and returning the errors
 - that a refusal raises an error instead of returning a plan

@@ -30,7 +30,8 @@ flowchart LR
 
 1. **Find holes:** reads the STEP geometry and finds inner cylindrical faces that go all the way around, merging the split halves many CAD exporters produce. Rounded inside corners and slot ends are curved too, but they aren't holes. The part is turned so the side with the most drillable holes faces up, and moved so its front-left corner is X0 Y0. It tells through holes from blind holes by what closes the bottom (the part's underside, a flat floor or a drill point). Holes it can't drill in one top-side setup are reported as skipped, with a reason.
 2. **Plan:** Claude gets the holes, the material, the tool library and the machine limits. It returns a plan in a fixed JSON format: spot drill, then drill, G81 or G83 peck drilling, holes grouped by tool, and a one-line reason for each operation.
-3. **Validate:** plain code checks the plan. It rejects the wrong drill size, holes drilled before they're spotted, holes drilled twice or missed, drills too short for the depth, and deep holes without pecking. A rejected plan goes back to Claude once with the errors listed.
+   - **With the drawing:** upload the part's PDF drawing too, and Claude reads the hole callouts off it, even when they're only lines on the page. Code converts them to mm and decides what each tolerance needs: a hole tighter than a drill can hold is drilled under size and reamed (G85).
+3. **Validate:** plain code checks the plan. It rejects the wrong drill size, holes drilled before they're spotted, holes drilled twice or missed, drills too short for the depth, and deep holes without pecking. With a drawing, it also rejects callouts that don't match the model's holes, and tight holes that aren't reamed properly. A rejected plan goes back to Claude once with the errors listed.
 4. **Write G-code:** plain code. Speeds and feeds come from a material table, never from the model.
 5. **Safety checks:** a G-code reader tracks the machine's state line by line and runs six checks:
    - rapid moves into the part
@@ -55,12 +56,13 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **84 automated tests:** `uv run pytest`.
+- **104 automated tests:** `uv run pytest`.
 - **Real parts:** 11 real CAD parts from NIST, most of them inch parts modeled on their side or around their center. They exposed three hole-finding bugs, a missing set of inch drills and a gap in the safety checks; all are fixed. Three parts were checked against their drawings and match exactly, and two are now regression tests. Live plans on four parts all passed the safety checks. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md).
 - **Hole finding** is also tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
+- **Reading a real drawing, live:** NIST FTC-07's 4-page drawing has dimensions drawn as lines, with no text to search. Claude returned all six hole callouts for the drilling side with the right sizes and tolerances, and left out the ones for side holes. Code flagged the 8 Ø.250 +.003" holes for reaming, and the plan spots, drills 6.0 mm and reams them with a 1/4" reamer. It passed validation first time and all six safety checks. The drawing roughly doubles the cost of a plan, to $0.17. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#reading-the-drawings).
 - **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
 - **Plan changes, live:** on the mixed plate, "do the deep holes first" was reordered without adding a tool change. "Skip spot drilling to save time" was declined with the reason, plus a cheaper change that was allowed. "Peck every hole, 2 mm at a time" was applied, with two operations merged, and the cycle time went from 0:35 to 0:40. Each took 6–9 seconds.
 - **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on.
@@ -79,7 +81,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## Limits and next steps
 
-- **v1 scope:** round holes drilled from one side of the part, in one setup, Fanuc-style. The part is turned to whichever of its six sides has the most holes to drill. Tapping, reaming, counterbores with flat floors, pockets, chamfers and multiple setups are out of scope.
+- **v1 scope:** round holes drilled from one side of the part, in one setup, Fanuc-style. The part is turned to whichever of its six sides has the most holes to drill. Tapping, boring, counterbores with flat floors, pockets, chamfers and multiple setups are out of scope. Reaming works for the reamer sizes in the library.
 - **Tool reach** isn't checked: a hole deep inside a box needs a tool and holder long enough to reach it without hitting the walls.
 - **Safety checks:** the rapid check looks at each move's start and end points, not the full path, and only knows the surface height at hole centers. "Too deep" is measured against the bottom of the part, not each blind hole's depth.
 - **Next:** tapping (G84), a post-processor per machine, a rules-only planner to compare against Claude's plans, and a record of operator feedback on each job.
@@ -101,6 +103,7 @@ Command-line versions of each step:
 
 ```bash
 uv run --env-file .env python -m hole_cam.planner fixtures/parts/mixed.step 6061 > plan.json
+uv run --env-file .env python -m hole_cam.planner fixtures/nist/nist_ftc_07_asme1_rd.stp 6061 fixtures/nist/nist_ftc_07_asme1_rd.pdf > ftc07.json  # with its drawing
 uv run python -m hole_cam.gcode   fixtures/parts/mixed.step plan.json 6061 > mixed.nc
 uv run python -m hole_cam.checks  mixed.nc fixtures/parts/mixed.step
 ```

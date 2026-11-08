@@ -76,7 +76,7 @@ I ran the full pipeline live on the four parts the library can mostly drill: pla
 
 What Claude got right without being told:
 - **FTC-07:** recognized the counterbores from the coaxial holes. It cut them before the holes beneath, and warned that a drill leaves a cone-shaped floor where a screw head needs a flat seat.
-- **FTC-08:** the 8 undrilled holes need reamers, and those are exactly the ones the drawing tolerances tightly (+.005/−.001").
+- **FTC-08:** the 8 holes no library drill fits are Ø.228", .238" and .242", the sizes of #1, B and C drills, which the library doesn't have. Claude named a reamer, a boring bar or the right drill for each. (An earlier version of this page said these were the holes the drawing tolerances tightly. That was wrong: the drawing gives all 20 holes the same +.005/−.001", which a drill can hold.)
 - **FTC-09:** the plate is 3 mm thick, so it made the spot holes shallower to keep them from breaking through.
 - **FTC-10:** it read the 2.46 mm holes as M3 threads modeled at their inner diameter, and named the 2.5 mm tap drill they'd need.
 
@@ -90,10 +90,29 @@ One FTC-07 rerun was rejected: Claude hadn't spot drilled the 9/32" holes under 
 
 ---
 
+## Reading the drawings
+
+A STEP file has the shape but not the tolerances. Hole-CAM now takes the drawing PDF as well: Claude reads the hole callouts, and code decides whether each hole can be drilled or must be reamed (see [HOW-IT-WORKS.md](HOW-IT-WORKS.md#reading-the-drawing)). The NIST drawings are a hard test, because their dimensions are drawn as lines with no text to search: they have to be read off the page.
+
+I read the FTC-07 and FTC-08 drawings myself first, so there was an answer to check against:
+
+| Part | Hole callouts in the drilling setup | Needs |
+|---|---|---|
+| FTC-07 | 8 × Ø.250 +.003 −.000 (or −.001), in four callouts | **Ream**: +.003" is 0.076 mm, under what a drill holds |
+| | 4 × Ø.281 +.006 −.001 | Drill |
+| | 4 × ⌴Ø.438 ±.010 counterbores | Drill (flat floor needs another tool) |
+| FTC-08 | 20 holes, all +.005 −.001 (or +.006 −.001) | Drill: +.005" is 0.127 mm, which a drill holds |
+
+**Live, on FTC-07** (one run, $0.17, 63 s): Claude returned all six callouts for the holes in this setup, with the right sizes and tolerances, including the counterbore symbol, and left out the four callouts for holes on the sides. Code marked the 8 Ø.250 holes for reaming. Claude's plan spots them, drills them 6.0 mm and reams them with the 1/4" reamer on `G85`. It passed validation on the first attempt, and the program passed all six safety checks.
+
+What isn't verified: which of the identical Ø.250 callouts went to which of those 8 holes. Claude said itself that it assumed where the model's origin is. All four have the same tolerance, so the plan is the same either way, but on a part where they differed this would matter. FTC-08 hasn't been run live with its drawing.
+
+---
+
 ## What's still not handled
 
 - **Counterbores** come out as two holes, one per diameter, and are drilled with a pointed drill. Claude warns about it, but a flat-bottom tool isn't modeled.
 - **Tool reach.** On FTC-07 the holes are on a boss 117 mm down inside the box. Nothing checks that the tool and holder are long enough, or clear the walls. Claude raised this on FTC-08; the code doesn't check it.
 - **Setups are limited to the six sides of the model's box.** Holes on angled faces are always skipped, and only one setup is planned.
 - **Big parts are slow to read.** Hole finding takes up to 16 seconds on CTC-02, because the setup search tries both faces along the main axis.
-- **Precision holes.** Holes with tight tolerances are matched to a drill by size alone. The drawing's tolerance isn't in the STEP geometry, so a hole that needs reaming gets drilled if a drill matches.
+- **Precision holes without a drawing.** The tolerance isn't in the STEP geometry, so without the drawing a hole that needs reaming gets drilled if a drill matches. With the drawing, only holes the library has a reamer and pre-drill for can be reamed; others are left out with a warning.

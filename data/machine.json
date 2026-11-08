@@ -1,5 +1,5 @@
 {
-  "_note": "Generic 3-axis vertical mill, Fanuc-style control. Distances in mm, work offset G54 Z0 on top of the part. rapid_rate (mm/min), tool_change_seconds and peck_clearance (how far above the last peck the drill comes back down) are typical values used for the simulation and cycle time, not measured on a real machine.",
+  "_note": "Generic 3-axis vertical mill, Fanuc-style control. Distances in mm, work offset G54 Z0 on top of the part. rapid_rate (mm/min), tool_change_seconds and peck_clearance (how far above the last peck the drill comes back down) are typical values used for the simulation and cycle time, not measured on a real machine. drill_oversize (mm) is how much bigger than its size a twist drill can cut; a hole whose upper tolerance is tighter than that is reamed.",
   "name": "Generic VMC",
   "max_rpm": 10000,
   "max_feed": 10000,
@@ -9,5 +9,6 @@
   "peck_ratio": 3.0,
   "rapid_rate": 24000,
   "tool_change_seconds": 4.0,
-  "peck_clearance": 1.0
+  "peck_clearance": 1.0,
+  "drill_oversize": 0.1
 }

@@ -23,7 +23,9 @@ function timeline(toolpath) {
   })
 }
 
-const toolName = (n, info) => `T${n} · ${info?.diameter} mm ${info?.type === 'spot_drill' ? 'spot drill' : 'drill'}`
+const TOOL_NAMES = { spot_drill: 'spot drill', drill: 'drill', reamer: 'reamer' }
+const toolName = (n, info) => `T${n} · ${info?.diameter} mm ${TOOL_NAMES[info?.type] ?? 'tool'}`
+const VERBS = { spot_drill: 'Spot drilling', drill: 'Drilling', reamer: 'Reaming' }
 
 // A plain-words description of each move, e.g. "Drilling hole 4 · peck 2 of 5" or "Pulling out to clear chips".
 export function describeSteps(events, holes, toolInfo) {
@@ -31,7 +33,8 @@ export function describeSteps(events, holes, toolInfo) {
   const holeAt = (p) => holes.find((h) => near([h.x, h.y], p))
   const key = (e) => `${e.line} ${e.to[0]} ${e.to[1]}`
   const feeds = {}
-  for (const e of events) if (e.kind === 'feed') feeds[key(e)] = (feeds[key(e)] ?? 0) + 1
+  const down = (e) => e.kind === 'feed' && e.to[2] < e.from[2] // a reamer also feeds back out
+  for (const e of events) if (down(e)) feeds[key(e)] = (feeds[key(e)] ?? 0) + 1
   const done = {}
   return events.map((e) => {
     const tool = toolName(e.tool, toolInfo[e.tool])
@@ -39,9 +42,10 @@ export function describeSteps(events, holes, toolInfo) {
     const hole = holeAt(e.to)
     const where = hole ? `hole ${hole.id}` : 'the next position'
     const k = key(e)
+    if (e.kind === 'feed' && !down(e)) return { what: `Feeding back out of ${where}`, tool }
     if (e.kind === 'feed') {
       done[k] = (done[k] ?? 0) + 1
-      const verb = toolInfo[e.tool]?.type === 'spot_drill' ? 'Spot drilling' : 'Drilling'
+      const verb = VERBS[toolInfo[e.tool]?.type] ?? 'Drilling'
       return { what: `${verb} ${where}${feeds[k] > 1 ? ` · peck ${done[k]} of ${feeds[k]}` : ''}`, tool }
     }
     if (!near(e.from, e.to)) return { what: `Moving to ${where}`, tool }
@@ -62,21 +66,22 @@ function stateAt(events, t) {
   return { i, e, tip }
 }
 
-// Fluted part of a twist drill, tip at the origin pointing down: a two-flute cross-section swept up a
-// right-hand helix, shrinking to a point over the first tipLength mm so the point is ground at the point angle.
-function fluteGeometry(r, tipLength, fluteLength) {
+// Fluted part of a cutting tool, tip at the origin pointing down: a fluted cross-section swept up a right-hand
+// helix, shrinking over the first tipLength mm (to a point for a drill, to a short chamfer for a reamer).
+// A drill has 2 flutes on a helix; a reamer has 6 straight ones.
+function fluteGeometry(r, tipLength, fluteLength, { flutes = 2, helix = HELIX, tipScale = 0 } = {}) {
   const around = 48
-  const lead = (2 * Math.PI * r) / Math.tan(HELIX)
+  const lead = helix ? (2 * Math.PI * r) / Math.tan(helix) : Infinity
   const zs = Array.from({ length: 8 }, (_, i) => (tipLength * i) / 8)
   for (let z = tipLength; z < fluteLength; z += 0.5) zs.push(z)
   zs.push(fluteLength)
   const position = []
   for (const z of zs) {
-    const scale = Math.min(1, z / tipLength)
+    const scale = Math.min(1, tipScale + ((1 - tipScale) * z) / tipLength)
     const twist = (z / lead) * 2 * Math.PI
     for (let j = 0; j < around; j++) {
       const a = (j / around) * 2 * Math.PI
-      const rho = r * scale * (1 - FLUTE_DEPTH * Math.max(0, Math.sin(2 * a)) ** 1.5)
+      const rho = r * scale * (1 - FLUTE_DEPTH * Math.max(0, Math.sin(flutes * a)) ** 1.5)
       position.push(rho * Math.cos(a + twist), rho * Math.sin(a + twist), z)
     }
   }
@@ -97,10 +102,12 @@ function fluteGeometry(r, tipLength, fluteLength) {
 const zCylinder = (radius, height, bottom) =>
   new THREE.CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2).translate(0, 0, bottom + height / 2)
 
-// A drill in its collet: fluted body, a little bare shank, then the collet nut (in the tool's plan color) and holder.
+// A drill or reamer in its collet: fluted body, a little bare shank, then the collet nut (in the tool's plan
+// color) and holder.
 function toolModel(number, info, envMap) {
   const r = info.diameter / 2
-  const tipLength = r / Math.tan(((info.point_angle ?? 118) / 2) * (Math.PI / 180))
+  const reamer = info.type === 'reamer'
+  const tipLength = reamer ? 0.4 : r / Math.tan(((info.point_angle ?? 118) / 2) * (Math.PI / 180))
   const fluteLength = info.flute_length ?? info.diameter * 5
   const steel = new THREE.MeshStandardMaterial({ color: 0xd3d8de, metalness: 0.9, roughness: 0.3, envMap })
   const holder = new THREE.MeshStandardMaterial({ color: 0x6b737d, metalness: 0.8, roughness: 0.4, envMap })
@@ -109,7 +116,7 @@ function toolModel(number, info, envMap) {
   const nutBottom = fluteLength + 6
   const group = new THREE.Group()
   group.add(
-    new THREE.Mesh(fluteGeometry(r, tipLength, fluteLength), steel),
+    new THREE.Mesh(fluteGeometry(r, tipLength, fluteLength, reamer ? { flutes: 6, helix: 0, tipScale: 0.85 } : {}), steel),
     new THREE.Mesh(zCylinder(r, 6, fluteLength), steel),
     new THREE.Mesh(zCylinder(nutRadius, 12, nutBottom), nut),
     new THREE.Mesh(zCylinder(nutRadius + 5, 30, nutBottom + 12), holder),

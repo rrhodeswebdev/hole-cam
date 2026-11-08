@@ -49,8 +49,8 @@ The model is loaded with CadQuery, which is built on the OpenCascade CAD kernel.
 
 ## 2. Planning the job (Claude)
 
-**Input:** the hole list, the material, the tool library and the machine's limits.
-**Output:** an ordered list of operations, each naming a tool, a drilling cycle, the holes it covers and a one-sentence reason, plus any warnings.
+**Input:** the hole list, the material, the tool library and the machine's limits, and optionally the part's drawing as a PDF.
+**Output:** an ordered list of operations, each naming a tool, a cycle, the holes it covers and a one-sentence reason, plus any warnings and the hole callouts read from the drawing.
 
 This is the only stage that uses AI, because it's the one that calls for judgment. Claude (Opus 5.5) is asked to:
 
@@ -58,6 +58,7 @@ This is the only stage that uses AI, because it's the one that calls for judgmen
 - **Match each hole to a drill of the same diameter.** If no drill fits, it leaves the hole out and says what it would need, such as a reamer or a boring bar.
 - **Peck drill deep holes.** Past 3× the hole's diameter, chips pack into the drill's flutes, so the drill is pulled out regularly to clear them (cycle G83). Shallower holes are drilled in one pass (cycle G81).
 - **Group holes by tool** to keep tool changes down, and **explain each choice** in terms a machinist can check.
+- **Read the drawing**, when there is one (see below).
 
 Claude is never asked for spindle speeds or feed rates. A wrong number there breaks tools, so those come from a table in stage 4.
 
@@ -67,17 +68,39 @@ The reply is constrained in two ways:
 
 Claude can also add warnings nobody asked for. On the test plate, it noticed that 6.8 mm and 5.0 mm are the standard drill sizes for M8 and M6 threads, and warned that tapping might be missing from the job.
 
+### Reading the drawing
+
+A STEP model has the shape but not the tolerances. Those are on the drawing, often only as lines and symbols with no searchable text, as on the NIST drawings. So Claude reads the PDF itself:
+- **What it returns:** each hole callout as written (for example `4X Ø.250 +.003 -.001`), the hole ids it points at, its units, the nominal size, and the upper and lower deviations.
+- **How it matches callouts to holes:** by size, count and where the leader line points in each view. Callouts for holes not in this setup, such as holes on the sides, are left out.
+- **What code decides from it:** the sizes are converted to mm by code, not by Claude. Then code decides what each hole needs. A twist drill can cut up to 0.1 mm oversize (`drill_oversize` in `data/machine.json`), so a hole whose upper tolerance is tighter than that is **reamed**: drilled 0.1 to 0.4 mm under size, then finished with a reamer of the exact size. A reamer cuts on its sides, so it is fed in and back out (cycle `G85`) rather than pulled out fast, which would scratch the wall.
+
+The page shows the callouts in a **From the drawing** table, with what each hole needs. On NIST part FTC-07, Claude read the six callouts for holes in this setup and left out the four for holes on the sides. The 8 Ø.250 holes are toleranced +.003", so they're reamed. The Ø.281 holes (+.006") and Ø.438 counterbores (±.010") are drilled.
+
+```mermaid
+flowchart LR
+    pdf["Drawing PDF"] --> claude(["Claude reads callouts<br/>Ø, tolerance, which holes"])
+    claude --> mm["Code: convert to mm,<br/>check Ø against the model"]
+    mm --> tight{"Upper tolerance<br/>under 0.1 mm?"}
+    tight -->|yes| ream["Spot → drill 0.1–0.4 mm under<br/>→ ream (G85)"]
+    tight -->|no| drill["Spot → drill to size"]
+```
+
 ---
 
 ## 3. Validating the plan
 
-**Input:** Claude's plan and the hole list.
+**Input:** Claude's plan (including what it read off the drawing) and the hole list.
 **Output:** a list of errors. If it's empty, the plan can be used.
 
 Plain code checks every plan, because a well-formatted plan can still be wrong. It rejects a plan if:
 
 - a tool can't do the operation (for example, a spot drill used to drill a hole)
-- a drill's diameter doesn't match its hole (within 0.02 mm)
+- a drill's diameter doesn't match its hole (within 0.02 mm), unless the hole is reamed afterwards
+- a drawing callout's size doesn't match the model's size for the holes it points at, it lists more holes than its count (4X), or a hole has two callouts. The callout is on the wrong hole, or the drawing and model disagree; either way a person should look.
+- a hole the drawing tolerances tighter than a drill holds is drilled to size, or not reamed when the library has the reamer and pre-drill for it
+- a hole is reamed before it's drilled, or its pre-drill leaves less than 0.1 or more than 0.4 mm for the reamer
+- a reaming operation doesn't use `G85`, or a drilling one does
 - a hole is drilled before it's spotted. A hole that starts at the floor of a wider hole already drilled counts as spotted, because the wider drill's point leaves a centered cone.
 - a hole under a counterbore deeper than the R-plane clearance is spotted or drilled before the counterbore is cut. Until then, the rapid down to its R plane would end inside the part.
 - a hole is drilled twice, or skipped even though a drill fits it
@@ -121,9 +144,9 @@ M30                                    end of program
 
 ### Where the numbers come from
 
-- **Spindle speed:** rpm = cutting speed × 1000 / (π × tool diameter). In 6061 aluminum the table gives 75 m/min, so a 10 mm spot drill runs at 2387 rpm. Speed is capped at the machine's maximum.
+- **Spindle speed:** rpm = cutting speed × 1000 / (π × tool diameter). In 6061 aluminum the table gives 75 m/min, so a 10 mm spot drill runs at 2387 rpm. Reamers have their own, slower cutting speed (40 m/min in 6061) and a larger feed per revolution. Speed is capped at the machine's maximum.
 - **Feed rate:** feed (mm/min) = rpm × feed per revolution. Feed per revolution comes from the material table and grows with drill diameter.
-- **Drilling depth:** a drill's tip is a cone, so it has to go deeper than the hole to make the full diameter reach the bottom. For a 118° drill, that extra length is (diameter / 2) / tan(59°), about 1.5 mm on a 5 mm drill. Through holes go another 1 mm so the drill breaks out cleanly.
+- **Drilling depth:** a drill's tip is a cone, so it has to go deeper than the hole to make the full diameter reach the bottom. For a 118° drill, that extra length is (diameter / 2) / tan(59°), about 1.5 mm on a 5 mm drill. Through holes go another 1 mm so the drill breaks out cleanly. A reamer goes to the hole's depth; its short lead chamfer is ignored.
 - **Hole order:** within each operation, the next hole is always the nearest one not yet drilled, starting from the corner.
 - **Tool changes:** when two operations in a row use the same tool (for example, plain drilling then peck drilling with the 5 mm drill), it stays loaded and there's no trip home in between.
 
@@ -171,7 +194,7 @@ The page shows the part in 3D with the toolpath drawn over it:
 ### The simulated run and cycle time
 
 The view also plays the program back like a simple machine simulator. It starts by itself, or waits for Play if the computer is set to reduce motion.
-- **The tool:** a model of each drill in its holder moves through every move. It's built from the tool library: two spiral flutes at the drill's real diameter and flute length, ground to its real point angle, spinning while the program runs. The collet nut holding it is in the tool's color from the plan list. Peck cycles (`G83`) are played out in full: down one peck, back out to the R plane to clear chips, down again.
+- **The tool:** a model of each drill in its holder moves through every move. It's built from the tool library: two spiral flutes at the drill's real diameter and flute length, ground to its real point angle, spinning while the program runs. The collet nut holding it is in the tool's color from the plan list. Peck cycles (`G83`) are played out in full: down one peck, back out to the R plane to clear chips, down again. A reamer has six straight flutes and feeds back out of the hole (`G85`).
 - **The holes:** each hole fills in with the drill's color as the drill feeds down through it. Spot drilling doesn't count, since it only marks the start.
 - **The current step:** a card in the corner of the view says in plain words what the machine is doing ("Drilling hole 4 · peck 2 of 5", "Pulling out to clear chips", "Tool change: T8 · 6.8 mm drill"), with the tool and the G-code line being run. The same line is highlighted in the G-code listing, which scrolls to follow it.
 - **The controls:** play/pause, a slider to jump to any moment, and speeds from 0.1× to 5×. It plays at 1×, real machine time, by default. The slower speeds help follow the rapids, which take about a tenth of a second between holes.
@@ -186,6 +209,7 @@ flowchart LR
     kind -->|"G01 / cycle feed"| feed["distance ÷ programmed feed F"]
     kind -->|"M06"| tc["fixed tool-change time"]
     kind -->|"G83"| pecks["split into pecks,<br/>retracts and re-entries"] --> rapid & feed
+    kind -->|"G85"| out["feed in,<br/>feed back out"] --> feed
     rapid & feed & tc --> sum["Estimated cycle time"]
 ```
 
@@ -250,9 +274,10 @@ The page sends the STEP file again with each request instead of the hole list. T
 
 ## How the pieces connect
 
-The web page sends the STEP file and material to `POST /jobs`, or to `POST /jobs/revise` with the current plan and a requested change. The server runs all six stages and returns everything in one response:
+The web page sends the STEP file, material and optional drawing PDF to `POST /jobs`, or to `POST /jobs/revise` with the current plan and a requested change. The server runs all six stages and returns everything in one response:
 - the holes and skipped holes
 - the plan, or the reasons it was rejected
+- the drawing callouts, in mm, with which holes need reaming
 - the G-code and the safety check results
 - the part mesh, the timed toolpath and the estimated cycle time
 - whether the program may be downloaded
@@ -262,7 +287,7 @@ Nothing is stored between requests.
 
 ```mermaid
 flowchart TD
-    browser["Browser<br/>React + three.js"] -->|"POST /jobs<br/>STEP file + material"| api["FastAPI<br/>api.py"]
+    browser["Browser<br/>React + three.js"] -->|"POST /jobs<br/>STEP file + material<br/>+ drawing PDF"| api["FastAPI<br/>api.py"]
     api --> holes["holes.py<br/>1 · find holes (CadQuery)"]
     api --> planner["planner.py<br/>2–3 · plan + validate"]
     planner <-->|"schema-constrained,<br/>one retry"| claude(["Claude Opus 5.5"])
@@ -281,6 +306,7 @@ flowchart TD
 | Decided by Claude | Decided by plain code |
 |---|---|
 | Which operations, in what order | Finding holes and measuring them |
+| Reading the drawing's hole callouts | Converting them to mm, and whether a hole must be reamed |
 | Which tool for each hole | Spindle speeds and feed rates |
 | When to peck drill | Every number in the G-code |
 | Explaining each choice | Whether the plan is acceptable |
@@ -310,6 +336,8 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 | **Spot drill** | A short, stiff tool that makes a small starting cone so a drill doesn't wander |
 | **Plain drilling (G81)** | Feed to depth in one go, then retract |
 | **Peck drilling (G83)** | Drill in steps, pulling out between them to clear chips |
+| **Reaming (G85)** | Finishing a slightly undersized drilled hole to an exact size with a reamer, feeding in and back out |
+| **Tolerance callout** | The size and allowed variation of a feature on the drawing, for example `Ø.250 +.003 -.000`: 0.250" to 0.253" |
 | **R plane** | The height just above the surface where a drilling cycle switches from rapid to feed |
 | **G98 / G99** | After each hole, return to the starting height (G98) or only to the R plane (G99) |
 | **Through / blind hole** | A through hole goes all the way through the part; a blind hole has a bottom |
@@ -322,7 +350,7 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 
 ## What it doesn't do
 
-- Holes only: no tapping, reaming, pockets, chamfers or profiles.
+- Holes only: no tapping, boring, pockets, chamfers or profiles. Reaming only to the reamer sizes in the library.
 - One setup: the part is turned to whichever of its six sides has the most holes to drill, and holes on the other sides, or on angled faces, are skipped.
 - Programs are metric and Fanuc-style only, though inch parts and inch drills work.
 - Counterbored holes come out as two separate holes, one per diameter, drilled with a pointed drill. Claude warns when a flat floor is needed.

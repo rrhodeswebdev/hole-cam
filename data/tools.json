@@ -34,5 +34,13 @@
   {"id": "DRL-27/64IN", "number": 33, "type": "drill", "diameter": 10.7156, "point_angle": 118, "flute_length": 100, "description": "DRILL 27/64 1/2-13 TAP DRILL (10.716MM)"},
   {"id": "DRL-7/16IN", "number": 34, "type": "drill", "diameter": 11.1125, "point_angle": 118, "flute_length": 100, "description": "DRILL 7/16 (11.112MM)"},
   {"id": "DRL-15/32IN", "number": 35, "type": "drill", "diameter": 11.9062, "point_angle": 118, "flute_length": 103, "description": "DRILL 15/32 (11.906MM)"},
-  {"id": "DRL-1/2IN", "number": 36, "type": "drill", "diameter": 12.7, "point_angle": 118, "flute_length": 114, "description": "DRILL 1/2 (12.700MM)"}
+  {"id": "DRL-1/2IN", "number": 36, "type": "drill", "diameter": 12.7, "point_angle": 118, "flute_length": 114, "description": "DRILL 1/2 (12.700MM)"},
+  {"id": "DRL-5.8", "number": 37, "type": "drill", "diameter": 5.8, "point_angle": 118, "flute_length": 57, "description": "DRILL 5.8MM 6MM REAMER PRE-DRILL"},
+  {"id": "DRL-7.8", "number": 38, "type": "drill", "diameter": 7.8, "point_angle": 118, "flute_length": 75, "description": "DRILL 7.8MM 8MM REAMER PRE-DRILL"},
+  {"id": "DRL-9.8", "number": 39, "type": "drill", "diameter": 9.8, "point_angle": 118, "flute_length": 87, "description": "DRILL 9.8MM 10MM REAMER PRE-DRILL"},
+  {"id": "RMR-6H7", "number": 40, "type": "reamer", "diameter": 6.0, "point_angle": 90, "flute_length": 26, "description": "REAMER 6MM H7"},
+  {"id": "RMR-8H7", "number": 41, "type": "reamer", "diameter": 8.0, "point_angle": 90, "flute_length": 33, "description": "REAMER 8MM H7"},
+  {"id": "RMR-10H7", "number": 42, "type": "reamer", "diameter": 10.0, "point_angle": 90, "flute_length": 38, "description": "REAMER 10MM H7"},
+  {"id": "RMR-1/4IN", "number": 43, "type": "reamer", "diameter": 6.35, "point_angle": 90, "flute_length": 38, "description": "REAMER 1/4 (6.350MM)"},
+  {"id": "RMR-3/8IN", "number": 44, "type": "reamer", "diameter": 9.525, "point_angle": 90, "flute_length": 44, "description": "REAMER 3/8 (9.525MM)"}
 ]

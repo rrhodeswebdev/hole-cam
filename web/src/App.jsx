@@ -6,9 +6,10 @@ const fmt = (n) => Number(n.toFixed(3)).toString()
 const EXAMPLES = ['Do the deep holes first', 'Peck every hole, 2 mm at a time', 'Spot drill 1 mm deep', 'Skip spot drilling to save time']
 
 // One line per operation, used for the plan list and to compare plans.
+const OP_NAMES = { spot_drill: 'Spot drill', drill: 'Drill', ream: 'Ream' }
 const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
   ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
-  : `T${toolNumbers[op.tool_id]} Drill · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
+  : `T${toolNumbers[op.tool_id]} ${OP_NAMES[op.op]} · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
 // Plain loop rather than Object.groupBy, which older browsers (before Chrome 117 / Safari 17.4) lack.
 const countBy = (list, key) => list.reduce((acc, x) => ({ ...acc, [key(x)]: (acc[key(x)] ?? 0) + 1 }), {})
 const toolChanges = (job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
@@ -22,11 +23,12 @@ export default function App() {
   const [materials, setMaterials] = useState({})
   const [material, setMaterial] = useState('6061')
   const [file, setFile] = useState(null)
+  const [drawing, setDrawing] = useState(null) // optional PDF
   const [job, setJob] = useState(null)
   const [busy, setBusy] = useState(null) // null, 'plan' or 'revise'
   const [error, setError] = useState(null)
   const [activeLine, setActiveLine] = useState(null)
-  const [planned, setPlanned] = useState(null) // the file and material the current job came from
+  const [planned, setPlanned] = useState(null) // the file, drawing and material the current job came from
   const [revision, setRevision] = useState(null) // { request, summary, previous } or { request, summary, errors }
 
   useEffect(() => {
@@ -47,12 +49,13 @@ export default function App() {
     const body = new FormData()
     body.append('file', file)
     body.append('material', material)
+    if (drawing) body.append('drawing', drawing)
     try {
       const r = await fetch('/jobs', { method: 'POST', body })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(errorText(data.detail, r.status))
       setJob(data)
-      setPlanned({ file, material })
+      setPlanned({ file, drawing, material })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -66,6 +69,7 @@ export default function App() {
     const body = new FormData()
     body.append('file', planned.file)
     body.append('material', planned.material)
+    if (planned.drawing) body.append('drawing', planned.drawing)
     body.append('plan', JSON.stringify(job.plan))
     body.append('request', request)
     try {
@@ -116,13 +120,17 @@ export default function App() {
             <input type="file" accept=".step,.stp" onChange={(e) => setFile(e.target.files[0] ?? null)} />
           </label>
           <label>
+            Drawing (PDF, optional)
+            <input type="file" accept=".pdf,application/pdf" onChange={(e) => setDrawing(e.target.files[0] ?? null)} />
+          </label>
+          <label>
             Material
             <select value={material} onChange={(e) => setMaterial(e.target.value)}>
               {Object.entries(materials).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           </label>
           <button type="submit" disabled={!file || busy}>{busy === 'plan' ? 'Planning…' : 'Plan the job'}</button>
-          <p className="muted small">{busy === 'plan' && 'Finding holes and asking Claude for a plan. This can take a minute.'}</p>
+          <p className="muted small">{busy === 'plan' && `Finding holes and asking Claude for a plan${drawing ? ' from the drawing' : ''}. This can take a minute.`}</p>
         </form>
 
         {error && <p className="alert" role="alert">{error}</p>}
@@ -137,7 +145,7 @@ export default function App() {
           // setActiveLine is stable, so the viewer's scene is not rebuilt on every line change
           ? <Viewer job={job} onLine={setActiveLine} />
           : !busy && <div className="empty"><p>Upload a part to see it here with its toolpath.</p></div>}
-        {busy && <Working what={busy} />}
+        {busy && <Working what={busy} drawing={busy === 'plan' ? drawing : planned?.drawing} />}
       </main>
     </div>
   )
@@ -165,6 +173,8 @@ function Results({ job, onDownload, activeLine, change }) {
         ))}
       </section>
 
+      {job.drawing?.length > 0 && <FromDrawing callouts={job.drawing} />}
+
       {plan && (
         <section className="card">
           <h2>Plan</h2>
@@ -175,7 +185,7 @@ function Results({ job, onDownload, activeLine, change }) {
                 <li key={i}>
                   <span className="swatch" style={{ background: toolColor(t) }} aria-hidden="true" />
                   <div>
-                    <strong>T{t} {op.op === 'spot_drill' ? 'Spot drill' : 'Drill'}</strong>{' '}
+                    <strong>T{t} {OP_NAMES[op.op]}</strong>{' '}
                     <span className="muted">{op.tool_id} · {opLabel(op, tool_numbers).split(' · ').slice(1).join(' · ')}</span>
                     <p className="small">{op.reason}</p>
                   </div>
@@ -298,7 +308,31 @@ function RevisionResult({ job, revision, onUndo }) {
 }
 
 // Over the 3D area while Claude works: what's happening and how long it's taken.
-function Working({ what }) {
+// What Claude read off the drawing, and what the tolerance needs: the Drill/Ream call is made by code, not Claude.
+function FromDrawing({ callouts }) {
+  const dev = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v))
+  return (
+    <section className="card">
+      <h2>From the drawing <span className="muted">read by Claude</span></h2>
+      <table>
+        <thead><tr><th>Callout</th><th>Holes</th><th>Tolerance mm</th><th>Needs</th></tr></thead>
+        <tbody>
+          {callouts.map((c, i) => (
+            <tr key={i}>
+              <td>{c.callout}</td>
+              <td>{c.hole_ids.join(', ')}</td>
+              <td>{dev(c.plus_mm)} / {dev(c.minus_mm)}</td>
+              <td>{c.ream ? <strong>Ream</strong> : 'Drill'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">A drill can cut up to 0.1 mm oversize, so a hole with a tighter upper tolerance is drilled under size and reamed.</p>
+    </section>
+  )
+}
+
+function Working({ what, drawing }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     const start = Date.now()
@@ -308,7 +342,9 @@ function Working({ what }) {
   return (
     <div className={`working ${what}`}>
       <span className="spinner" aria-hidden="true" />
-      <p role="status">{what === 'plan' ? 'Finding holes and asking Claude for a plan' : 'Claude is revising the plan'}</p>
+      <p role="status">{what === 'plan'
+        ? (drawing ? 'Finding holes while Claude reads the drawing and plans' : 'Finding holes and asking Claude for a plan')
+        : 'Claude is revising the plan'}</p>
       <p className="small muted-dark" aria-hidden="true">{clock(seconds)} · usually under a minute</p>
     </div>
   )

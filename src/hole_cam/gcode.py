@@ -28,14 +28,17 @@ def generate(found, plan, tools, material, machine, name="PART"):
     ops = plan["operations"]
     for k, op in enumerate(ops):
         tool = tools[op["tool_id"]]
+        vc = material["vc"]
         if tool["type"] == "spot_drill":
             fpr = material["spot_feed_per_rev"]
+        elif tool["type"] == "reamer":
+            vc, fpr = material["ream_vc"], _lookup(material["ream_feed_per_rev"], tool["diameter"])
         else:
             fpr = _lookup(material["drill_feed_per_rev"], tool["diameter"])
-        rpm = min(machine["max_rpm"], round(material["vc"] * 1000 / (math.pi * tool["diameter"])))
+        rpm = min(machine["max_rpm"], round(vc * 1000 / (math.pi * tool["diameter"])))
         feed = min(machine["max_feed"], round(rpm * fpr))
         t = tool["number"]
-        cycle = "G83" if op.get("cycle") == "G83" else "G81"
+        cycle = op.get("cycle") if op.get("cycle") in ("G83", "G85") else "G81"
         peck = f" Q{_f(op.get('peck', tool['diameter']))}" if cycle == "G83" else ""
 
         # Back-to-back operations with the same tool (e.g. G81 then G83) keep it loaded: no tool change, no trip home.
@@ -60,6 +63,10 @@ def _tip_depth(op, tool, hole, machine):
     """How far below the hole's top the tool tip goes."""
     if op["op"] == "spot_drill":
         return op["depth"]
+    if op["op"] == "ream":
+        # shortcut: a reamer's short lead chamfer is ignored; in a blind hole the last few tenths of a mm stay
+        # drilled size unless the pre-drill goes deeper.
+        return hole["depth"] + (machine["breakthrough"] if hole["through"] else 0)
     # The full diameter must reach the hole depth, so the point goes further; through holes add breakthrough.
     point = (tool["diameter"] / 2) / math.tan(math.radians(tool["point_angle"] / 2))
     return hole["depth"] + point + (machine["breakthrough"] if hole["through"] else 0)
@@ -69,7 +76,7 @@ def _lookup(table, diameter):
     for max_d, value in table:
         if diameter <= max_d:
             return value
-    raise ValueError(f"no feed in the material table for a {diameter} mm drill")
+    raise ValueError(f"no feed in the material table for a {diameter} mm tool")
 
 
 def _nearest_first(holes):

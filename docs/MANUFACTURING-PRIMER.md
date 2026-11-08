@@ -96,10 +96,11 @@ The people involved:
 | **Tap drill** | The drill size made for a thread. 6.8 mm is the tap drill for M8, and 5.0 mm for M6. |
 | **Counterbore** | A wider, shallow step at the top of a hole, so a bolt head sits flush or below the surface |
 | **Countersink** | A cone-shaped opening at the top of a hole, for a flat-head screw |
-| **Reaming** | A finishing pass with a **reamer** that brings a drilled hole to a very accurate size and smooth finish |
+| **Reaming** | A finishing pass with a **reamer** that brings a drilled hole to a very accurate size and smooth finish. The hole is first drilled a little under size, typically 0.1 to 0.4 mm, so the reamer only skims the wall. |
 | **Tolerance** | How far a dimension may vary and still be acceptable, for example 6.8 ± 0.1 mm |
+| **Tolerance callout** | How a drawing states a size and its tolerance. `4X Ø.250 +.003 -.001` means four holes, 0.250" diameter, allowed from 0.249" to 0.253". |
 
-**In Hole-CAM:** it finds round holes, measures diameter and depth, and labels each through or blind. Depth means the full-diameter depth, not counting the drill point. Claude noticed the test plate's 6.8 mm and 5.0 mm holes match the M8 and M6 tap drills and warned that tapping might be missing. A counterbore shows up as two separate holes.
+**In Hole-CAM:** it finds round holes, measures diameter and depth, and labels each through or blind. Depth means the full-diameter depth, not counting the drill point. Claude noticed the test plate's 6.8 mm and 5.0 mm holes match the M8 and M6 tap drills and warned that tapping might be missing. A counterbore shows up as two separate holes. With the drawing uploaded, Claude reads the tolerance callouts, and a hole toleranced tighter than a drill can hold (a drill may cut up to about 0.1 mm oversize) is drilled under size and reamed.
 
 ---
 
@@ -112,6 +113,7 @@ The people involved:
 | **Twist drill** | The ordinary drill. Its spiral grooves are called **flutes**, and they carry chips up and out of the hole. |
 | **Jobber drill** | The standard, general-purpose drill length |
 | **Flute length** | How much of the drill can actually cut. A hole deeper than the flute length can't be drilled with that tool. |
+| **Reamer** | A finishing tool with many straight flutes that cuts on its sides. It's fed in and back out slowly (cycle `G85`), never pulled out at rapid, which would scratch the finished wall. |
 | **Spot drill** | A short, stiff drill used to make a small starting cone. Long drills flex and can wander off position when starting on a flat surface, and the spot gives them a guide. |
 | **HSS, cobalt, carbide** | Tool materials. HSS (high-speed steel) is cheap and tough. Cobalt HSS handles more heat. Carbide is much harder and cuts much faster, but it's brittle and more expensive. |
 | **Tool library** | The list of tools the shop has available, with their sizes |
