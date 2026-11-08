@@ -82,7 +82,11 @@ What Claude got right without being told:
 
 FTC-10 was the first live plan rejected by validation. The corrected plan passed on the retry. I didn't record which rule the first attempt broke.
 
-The larger tool library costs more. Input grew from about 2,700 tokens to 6,700–7,700 per plan, because the whole library is sent to Claude. Sending only the drills that match a hole would bring that back down.
+The runs above sent Claude the whole 36-drill library, so input grew from about 2,700 tokens to 6,700–7,700 per plan. Claude now gets only the spot drills, the drills that fit a hole, and the nearest drill on each side of any hole no drill fits. Validation still checks against the whole library. FTC-07 then took 3,303 input tokens instead of 6,814, at $0.08, passing on the first attempt. The demo plate dropped to 1,893.
+
+### Claude was right, the validator was wrong
+
+One FTC-07 rerun was rejected: Claude hadn't spot drilled the 9/32" holes under the counterbores. That's correct machining. The 7/16" drill's point leaves a centered cone at the floor of each counterbore, and the cone guides the next drill just as a spot hole would. The validator now counts a hole at the floor of a wider drilled hole as spotted. It still rejects the plan when that hole is drilled before the wider one.
 
 ---
 

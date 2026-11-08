@@ -9,6 +9,8 @@ const EXAMPLES = ['Do the deep holes first', 'Peck every hole, 2 mm at a time', 
 const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
   ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
   : `T${toolNumbers[op.tool_id]} Drill · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
+// Plain loop rather than Object.groupBy, which older browsers (before Chrome 117 / Safari 17.4) lack.
+const countBy = (list, key) => list.reduce((acc, x) => ({ ...acc, [key(x)]: (acc[key(x)] ?? 0) + 1 }), {})
 const toolChanges = (job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
 
 function errorText(detail, status) {
@@ -157,8 +159,8 @@ function Results({ job, onDownload, activeLine, change }) {
         {job.part.setup && job.part.setup !== '+Z' && (
           <p className="note small">Turned so the model's {job.part.setup} side faces up: that side has the most holes to drill.</p>
         )}
-        {Object.entries(Object.groupBy(skipped, (s) => `Ø${fmt(s.diameter)}: ${s.reason}`)).map(([k, list]) => (
-          <p key={k} className="muted small">Skipped {list.length > 1 && `${list.length}× `}{k}</p>
+        {Object.entries(countBy(skipped, (s) => `Ø${fmt(s.diameter)}: ${s.reason}`)).map(([k, n]) => (
+          <p key={k} className="muted small">Skipped {n > 1 && `${n}× `}{k}</p>
         ))}
       </section>
 

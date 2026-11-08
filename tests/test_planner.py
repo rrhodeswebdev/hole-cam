@@ -7,7 +7,7 @@ import pytest
 
 from hole_cam.gcode import _load
 from hole_cam.holes import find_holes
-from hole_cam.planner import plan_job, revise_plan, validate
+from hole_cam.planner import offered_tools, plan_job, revise_plan, validate
 
 FIX = Path(__file__).parent.parent / "fixtures"
 TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
@@ -159,3 +159,26 @@ def test_hole_under_a_counterbore_with_no_drill_may_be_left_out():
     found = _counterbored()
     found["holes"][0]["diameter"] = 11.5  # no drill this size, so hole 1 needs an end mill and hole 2 can't be reached
     assert validate(_ops(), found, TOOLS, MACHINE)["errors"] == []
+
+
+def test_claude_sees_only_the_drills_that_matter():
+    client = FakeClient(GOOD)
+    plan_job(MIXED, MATERIALS["6061"], TOOLS, MACHINE, client=client)
+    job = json.loads(client.calls[0]["messages"][0]["content"].split("\n", 1)[1])
+    assert [t["id"] for t in job["tools"]] == ["SPOT-90-10", "DRL-5.0", "DRL-6.8"]
+    enum = client.calls[0]["output_config"]["format"]["schema"]["properties"]["operations"]["items"]["properties"]["tool_id"]["enum"]
+    assert enum == ["SPOT-90-10", "DRL-5.0", "DRL-6.8"]
+
+
+def test_a_hole_no_drill_fits_gets_the_nearest_drill_each_side():
+    found = find_holes(FIX / "parts/odd_size.step")  # hole 1: Ø7.1 (no drill), hole 2: Ø6.8
+    ids = [t["id"] for t in offered_tools(found, TOOLS)]
+    assert ids == ["SPOT-90-10", "DRL-6.8", "DRL-I", "DRL-9/32IN"]  # I = 6.909 mm, 9/32 = 7.144 mm
+
+
+def test_hole_under_a_drilled_counterbore_needs_no_spot():
+    step_drilled = _ops(("spot_drill", "SPOT-90-10", 1, 4.5), ("drill", "DRL-7/16IN", 1, 0), ("drill", "DRL-9/32IN", 2, 0))
+    assert validate(step_drilled, _counterbored(), TOOLS, MACHINE)["errors"] == []
+    unspotted_first = _ops(("drill", "DRL-9/32IN", 2, 0), ("spot_drill", "SPOT-90-10", 1, 4.5), ("drill", "DRL-7/16IN", 1, 0))
+    errors = validate(unspotted_first, _counterbored(), TOOLS, MACHINE)["errors"]
+    assert any("hole 2 is drilled before it is spotted" in e for e in errors)

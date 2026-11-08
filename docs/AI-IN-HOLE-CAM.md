@@ -77,12 +77,12 @@ The user message is `Plan this job:` followed by JSON with five parts:
 | `material` | The material's name, for example "6061-T6 aluminum". Speeds and feeds are deliberately left out. |
 | `holes` | Each hole's ID, X, Y, diameter, depth, through or blind, and top height |
 | `skipped` | Holes the app found but can't drill, with the reason, so Claude can mention them |
-| `tools` | The whole tool library: ID, type, diameter, point angle, flute length |
+| `tools` | The tools that matter for this part: spot drills, each drill that fits a hole, and for a hole no drill fits, the nearest drill on either side. ID, type, diameter, point angle, flute length. |
 | `machine` | The machine's limits and settings, including the peck ratio |
 
 Hole heights are given in the program's coordinates, where Z0 is the top of the part. That matches the machine settings Claude also sees. An earlier version sent raw CAD coordinates instead, and Claude correctly warned that "every depth will be off by 25 mm". The G-code was actually fine, but the input contradicted itself (see [What the live runs taught us](#what-the-live-runs-taught-us)).
 
-A typical job is about 2,500–2,700 input tokens, most of it the tool library.
+Sending only the relevant tools keeps the prompt short as the library grows. The library has 36 drills, but the demo plate's prompt uses 3 tools and 1,893 input tokens. The schema's list of allowed tool IDs uses the same short list. Validation still checks against the whole library, so trimming the prompt can't let a bad tool choice through.
 
 ---
 
@@ -202,7 +202,14 @@ Live runs on 6061 aluminum, measured on 2026-11-07:
 
 Costs are estimated from the token counts at Opus 5.5 list prices ($4 per million input tokens, $20 per million output). Output tokens include the model's reasoning. FTC-10 is the only live plan so far that failed validation; the retry with the errors listed fixed it.
 
-The NIST runs came after the tool library grew from 12 to 36 drills, which is why input is about 7,000 tokens instead of 2,700: the whole library goes into every prompt. What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
+The NIST runs came after the tool library grew from 12 to 36 drills, which is why input is about 7,000 tokens: at the time, the whole library went into every prompt. Since then Claude gets only the relevant tools:
+
+| Part | Time | Input tokens | Output tokens | Approx. cost | Attempts |
+|---|---|---|---|---|---|
+| Mixed plate, relevant tools only | 12.7 s | 1,893 | 1,258 | $0.033 | 1, valid |
+| NIST FTC-07, relevant tools only | 33.1 s | 3,303 | 3,320 | $0.080 | 1, valid |
+
+What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
 ---
 
@@ -215,7 +222,7 @@ The NIST runs came after the tool library grew from 12 to 36 drills, which is wh
 
 ```text
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 ```
@@ -236,7 +243,7 @@ Token counts weren't recorded for these runs. The prompt is the first plan's pro
 
 ## What the live runs taught us
 
-Running against the real model found four problems the fake-client tests couldn't:
+Running against the real model found five problems the fake-client tests couldn't:
 
 1. **Contradictory input caused a false warning.** Hole heights were sent in CAD coordinates while the machine settings said Z0 is the top of the part. Claude flagged it. The fix was to send hole heights in program coordinates. A test now checks this, and the warning is gone.
 2. **Claude's plans exposed a G-code inefficiency.** Claude split the spot drill into two operations with different depths, and the 5 mm drill into G81 and G83 operations. Both splits are correct, but the generator did a full tool change and trip home between operations using the same tool. The generator now keeps the tool loaded.
@@ -245,7 +252,9 @@ Running against the real model found four problems the fake-client tests couldn'
 
 4. **Claude's correct plan exposed a gap in the checks.** On NIST FTC-07, Claude cut each counterbore before the hole beneath it, because the smaller hole's R plane is otherwise inside solid metal. The order was right, but nothing in the code required it: a program in the wrong order passed all six safety checks. The validator now enforces it ([REAL-PARTS.md](REAL-PARTS.md#a-gap-in-the-safety-net)).
 
-All four are good examples of why a live model run belongs in testing, not just mocks.
+5. **The validator was stricter than good practice.** On another FTC-07 run, Claude didn't spot drill the holes under the counterbores, and validation rejected the plan. Claude was right: the counterbore drill's point leaves a centered cone that guides the next drill like a spot. The validator now accepts it, and still rejects drilling that hole before the counterbore.
+
+All five are good examples of why a live model run belongs in testing, not just mocks.
 
 ---
 

@@ -68,3 +68,11 @@ def test_trace_expands_g83_into_pecks():
         ("rapid", 2, -7), ("feed", -7, -10),  # last peck stops at full depth
         ("rapid", -10, 25),                  # G98: back to the starting height
     ]
+
+
+def test_stacked_holes_use_the_lowest_top_whatever_their_order():
+    hole = {"x": 10, "y": 10, "through": False}
+    cbore, under = {**hole, "top_z": 30, "diameter": 11, "depth": 7}, {**hole, "top_z": 23, "diameter": 7, "depth": 10}
+    for holes in ([cbore, under], [under, cbore]):
+        ctx = context_for({"part": {"top_z": 30, "bottom_z": 0}, "holes": holes})
+        assert ctx["local_tops"] == {(10, 10): -7}

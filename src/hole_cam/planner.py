@@ -31,7 +31,7 @@ Speeds and feeds are calculated elsewhere; do not include them."""
 REVISE = """
 
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first (a hole at the floor of a wider hole already drilled counts as spotted by that drill's point); each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 summary: one or two sentences to the machinist saying what you changed, or why you couldn't."""
@@ -74,18 +74,37 @@ def _job(found, material, tools, machine):
                        "tools": tools, "machine": machine}, indent=1)
 
 
+def offered_tools(found, tools):
+    """The tools worth showing Claude: every non-drill (spot drills), each drill that fits a hole, and for a hole
+    no drill fits, the nearest drill on either side so Claude can say what's close. Validation still uses the
+    whole library; this only keeps the prompt short (36 drills would triple its size)."""
+    drills = sorted((t for t in tools if t["type"] == "drill"), key=lambda t: t["diameter"])
+    keep = {t["id"] for t in tools if t["type"] != "drill"}
+    for h in found["holes"]:
+        fits = [t for t in drills if abs(t["diameter"] - h["diameter"]) <= DIAMETER_TOL]
+        if fits:
+            keep.update(t["id"] for t in fits)
+            continue
+        below = [t for t in drills if t["diameter"] < h["diameter"]]
+        above = [t for t in drills if t["diameter"] > h["diameter"]]
+        keep.update(t["id"] for t in below[-1:] + above[:1])
+    return [t for t in tools if t["id"] in keep]
+
+
 def plan_job(found, material, tools, machine, client=None):
     """Ask Claude for a plan; retry once if validation rejects it. Returns {plan, errors}."""
-    content = "Plan this job:\n" + _job(found, material, tools, machine)
-    return _ask(client, SYSTEM, content, plan_schema(tools), found, tools, machine)
+    offered = offered_tools(found, tools)
+    content = "Plan this job:\n" + _job(found, material, offered, machine)
+    return _ask(client, SYSTEM, content, plan_schema(offered), found, tools, machine)
 
 
 def revise_plan(found, material, tools, machine, plan, request, client=None):
     """Ask Claude to change `plan` as the machinist requests. Returns {plan, errors, summary}."""
-    schema = plan_schema(tools)
+    offered = offered_tools(found, tools)
+    schema = plan_schema(offered)
     schema["properties"]["summary"] = {"type": "string"}
     schema["required"].append("summary")
-    content = (f"The job:\n{_job(found, material, tools, machine)}\n\nCurrent plan:\n{json.dumps(plan, indent=1)}"
+    content = (f"The job:\n{_job(found, material, offered, machine)}\n\nCurrent plan:\n{json.dumps(plan, indent=1)}"
                f"\n\nThe machinist asks:\n{request}")
     result = _ask(client, SYSTEM + REVISE, content, schema, found, tools, machine)
     return {**result, "summary": result["plan"].pop("summary")}
@@ -122,6 +141,10 @@ def validate(plan, found, tools, machine):
     lib = {t["id"]: t for t in tools}
     errors = []
     spotted, drilled = {}, {}  # hole id -> operation number
+    # Holes that start at the floor of a wider hole on the same center (e.g. under a counterbore): hole id -> wider id.
+    above = {b["id"]: a["id"] for a in holes.values() for b in holes.values()
+             if abs(a["x"] - b["x"]) < 1e-3 and abs(a["y"] - b["y"]) < 1e-3 and a["diameter"] > b["diameter"]
+             and abs(b["top_z"] - (a["top_z"] - a["depth"])) < 0.01}
 
     for n, op in enumerate(plan["operations"], 1):
         tool = lib.get(op["tool_id"])
@@ -146,7 +169,8 @@ def validate(plan, found, tools, machine):
             if hid in drilled:
                 errors.append(f"{where}: hole {hid} is already drilled in operation {drilled[hid]}")
             drilled[hid] = n
-            if hid not in spotted:
+            # The point of the wider drill above leaves a centered cone, which guides this drill like a spot would.
+            if hid not in spotted and not (hid in above and above[hid] in drilled):
                 errors.append(f"{where}: hole {hid} is drilled before it is spotted")
             if abs(tool["diameter"] - h["diameter"]) > DIAMETER_TOL:
                 errors.append(f"{where}: a {tool['diameter']} mm drill on a {h['diameter']} mm hole {hid}")
@@ -158,12 +182,9 @@ def validate(plan, found, tools, machine):
         if op["op"] == "drill" and op["cycle"] == "G83" and op["peck"] <= 0:
             errors.append(f"{where}: G83 needs a peck depth above 0")
 
-    # A hole that starts at the floor of a wider one (e.g. under a counterbore) has its R plane below the surface
-    # when the wider one is deeper than the R clearance: until the wider hole is cut, that rapid ends in solid metal.
-    # The G-code checker only knows one surface height per hole center, so it can't see this; check it here.
-    above = {b["id"]: a["id"] for a in holes.values() for b in holes.values()
-             if abs(a["x"] - b["x"]) < 1e-3 and abs(a["y"] - b["y"]) < 1e-3 and a["diameter"] > b["diameter"]
-             and abs(b["top_z"] - (a["top_z"] - a["depth"])) < 0.01}
+    # A hole under a wider one has its R plane below the surface when the wider one is deeper than the R clearance:
+    # until the wider hole is cut, that rapid ends in solid metal. The G-code checker only knows one surface
+    # height per hole center, so it can't see this; check it here.
     for b, a in above.items():
         first = min((spotted.get(b, math.inf), drilled.get(b, math.inf)))
         if (holes[a]["depth"] > machine["r_clearance"] + 1e-3 and first < math.inf

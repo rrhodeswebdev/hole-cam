@@ -78,7 +78,8 @@ Plain code checks every plan, because a well-formatted plan can still be wrong. 
 
 - a tool can't do the operation (for example, a spot drill used to drill a hole)
 - a drill's diameter doesn't match its hole (within 0.02 mm)
-- a hole is drilled before it's spotted
+- a hole is drilled before it's spotted. A hole that starts at the floor of a wider hole already drilled counts as spotted, because the wider drill's point leaves a centered cone.
+- a hole under a counterbore deeper than the R-plane clearance is spotted or drilled before the counterbore is cut. Until then, the rapid down to its R plane would end inside the part.
 - a hole is drilled twice, or skipped even though a drill fits it
 - a drill's flutes are too short for the depth it has to reach
 - a hole deeper than 3× its diameter isn't peck drilled, or a peck cycle has no peck depth

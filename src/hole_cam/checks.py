@@ -29,10 +29,14 @@ CHECKS = {
 def context_for(found):
     """Checker context from find_holes() output, in work coordinates (Z0 = top of the part)."""
     z0 = found["part"]["top_z"]
-    return {
-        "local_tops": {(h["x"], h["y"]): h["top_z"] - z0 for h in found["holes"]},
-        "bottom_z": found["part"]["bottom_z"] - z0,
-    }
+    # Holes stacked on one center (a counterbore over a smaller hole) keep the lowest top, so a rapid down to the
+    # lower hole's R plane is allowed. Whether the counterbore above it is cut by then is checked in the plan
+    # (planner.validate), since this line-by-line reader doesn't track what material has been removed.
+    tops = {}
+    for h in found["holes"]:
+        key = (h["x"], h["y"])
+        tops[key] = min(tops.get(key, math.inf), h["top_z"] - z0)
+    return {"local_tops": tops, "bottom_z": found["part"]["bottom_z"] - z0}
 
 
 def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0, trace=None):
