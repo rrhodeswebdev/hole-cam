@@ -164,6 +164,34 @@ The page shows the part in 3D with the toolpath drawn over it:
 - **The toolpath** is drawn from the finished G-code, not from the plan, using the safety checker's record of every move. So the picture shows what the machine will actually do.
 - **Dashed lines are rapid moves and solid lines are cutting,** in one color per tool, matching the colors in the plan list. Cutting lines are drawn on top so they stay visible inside the part.
 
+### The simulated run and cycle time
+
+The view also plays the program back like a simple machine simulator. It starts by itself, or waits for Play if the computer is set to reduce motion.
+- **The tool:** a model of each drill in its holder moves through every move. It's built from the tool library: two spiral flutes at the drill's real diameter and flute length, ground to its real point angle, spinning while the program runs. The collet nut holding it is in the tool's color from the plan list. Peck cycles (`G83`) are played out in full: down one peck, back out to the R plane to clear chips, down again.
+- **The holes:** each hole fills in with the drill's color as the drill feeds down through it. Spot drilling doesn't count, since it only marks the start.
+- **The current step:** a card in the corner of the view says in plain words what the machine is doing ("Drilling hole 4 · peck 2 of 5", "Pulling out to clear chips", "Tool change: T8 · 6.8 mm drill"), with the tool and the G-code line being run. The same line is highlighted in the G-code listing, which scrolls to follow it.
+- **The controls:** play/pause, a slider to jump to any moment, and speeds from 0.5× to 5×. It plays at 1×, real machine time, by default.
+- **Tool changes:** the tool disappears for the length of a change, and the step card says which tool is going in.
+
+The timing comes from the same record of moves the safety checker builds. The checker already follows the program line by line, so it also times each move and expands each peck cycle into its separate moves:
+
+```mermaid
+flowchart LR
+    line["G-code line"] --> kind{Move type}
+    kind -->|"G00 rapid"| rapid["distance ÷ rapid rate"]
+    kind -->|"G01 / cycle feed"| feed["distance ÷ programmed feed F"]
+    kind -->|"M06"| tc["fixed tool-change time"]
+    kind -->|"G83"| pecks["split into pecks,<br/>retracts and re-entries"] --> rapid & feed
+    rapid & feed & tc --> sum["Estimated cycle time"]
+```
+
+The total is shown under the safety checks as **Estimated cycle time**, with the number of tool changes. For the mixed test plate it comes to about 32 seconds: 12 s of tool changes, 17 s of cutting and 3 s of rapids.
+
+It's an estimate:
+- The rapid rate (24 m/min), tool change time (4 s) and peck re-entry gap (1 mm) are typical values in `data/machine.json`, not measured on a real machine.
+- Rapids are timed as straight lines at full speed, with no acceleration. Real machines take longer on short moves.
+- Trips to the home position (`G28`) aren't timed.
+
 ---
 
 ## How the pieces connect
@@ -172,7 +200,7 @@ The web page sends the STEP file and material to one endpoint, `POST /jobs`. The
 - the holes and skipped holes
 - the plan, or the reasons it was rejected
 - the G-code and the safety check results
-- the part mesh and the toolpath
+- the part mesh, the timed toolpath and the estimated cycle time
 - whether the program may be downloaded.
 
 Nothing is stored between requests.
@@ -243,6 +271,7 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 - Metric units and Fanuc-style G-code only.
 - Counterbored holes come out as two separate holes, one per diameter.
 - The rapid-move check looks at each move's start and end points, not the full path. Below the top of the part, it only knows surface heights at hole centers.
+- The cycle time is an estimate from typical machine values, not a measured run.
 - The speeds and feeds are unverified starting values, and the programs haven't been run on a machine. Nothing it produces should run without a machinist's review.
 
 ---

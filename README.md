@@ -41,7 +41,7 @@ flowchart LR
    - an unsafe end of program or tool change
 
    The checks work on any Fanuc-style drilling program, not just this tool's.
-6. **Preview:** the part and toolpath in 3D. The toolpath is drawn by reading back the generated G-code, so it shows what the machine will do, not what was intended.
+6. **Preview:** the part and toolpath in 3D. The toolpath is drawn by reading back the generated G-code, so it shows what the machine will do, not what was intended. The view plays the program back: the drill moves through every move, including each peck out to clear chips, and the holes fill in as they're drilled. The G-code line being run is highlighted. The same moves give an estimated cycle time (about 32 s for the test plate).
 
 ## Where the AI is, and where it isn't
 
@@ -51,13 +51,13 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **62 automated tests:** `uv run pytest`.
+- **65 automated tests:** `uv run pytest`.
 - **Hole finding** is tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
 - **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
-- **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked.
+- **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on.
 
 **Not verified yet:**
 - [ ] A STEP file exported from real CAD software

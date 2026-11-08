@@ -74,14 +74,38 @@ th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--bord
 
 details { margin-top: 10px; }
 summary { cursor: pointer; font-size: 0.9rem; }
-pre { max-height: 320px; overflow: auto; font-size: 0.8rem; background: var(--bg); padding: 8px; border-radius: 6px; }
+pre { position: relative; max-height: 320px; overflow: auto; font-size: 0.8rem; background: var(--bg); padding: 8px; border-radius: 6px; }
 
-.legend { position: absolute; left: 12px; bottom: 8px; color: #c9d1d9; display: flex; gap: 6px; align-items: center; margin: 0; }
+.legend { position: absolute; right: 12px; top: 8px; color: #c9d1d9; display: flex; gap: 6px; align-items: center; margin: 0; }
 .legend .dash, .legend .solid { display: inline-block; width: 22px; border-top: 2px dashed #c9d1d9; margin-left: 8px; }
 .legend .solid { border-top-style: solid; }
+pre .active { display: block; background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* What the machine is doing right now, over the 3D view */
+.step {
+  position: absolute; left: 12px; top: 12px; max-width: min(420px, calc(100% - 24px)); padding: 10px 14px;
+  border-radius: 8px; background: rgb(10 13 17 / 0.82); color: #e6e9ed; border-left: 4px solid #4c8dff;
+}
+.step p { margin: 0; }
+.step-what { font-size: 1.15rem; font-weight: 600; line-height: 1.3; }
+.step-tool { font-size: 0.9rem; color: #b4bec9; }
+.step-line { display: block; margin-top: 6px; font: 0.85rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #c9d1d9; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+
+/* Simulation controls sit over the 3D view, which is dark in both themes. */
+.sim {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 8px 10px; border-radius: 8px;
+  background: rgb(10 13 17 / 0.78); color: #e6e9ed; display: flex; flex-direction: column; gap: 6px;
+}
+.sim-controls { display: flex; gap: 10px; align-items: center; }
+.sim-controls button { padding: 4px 12px; min-width: 76px; }
+.sim-controls input[type="range"] { flex: 1; min-width: 0; accent-color: #4c8dff; }
+.sim-controls .time { font-variant-numeric: tabular-nums; font-size: 0.85rem; white-space: nowrap; }
+.sim-controls select { background: #1b2027; color: #e6e9ed; border-color: #3a434e; padding: 3px 4px; }
 
 @media (max-width: 800px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto 60vh; height: auto; }
   .panel { border-right: 0; border-bottom: 1px solid var(--border); }
   .stage { height: 60vh; }
+  .legend { top: auto; bottom: 74px; }
 }

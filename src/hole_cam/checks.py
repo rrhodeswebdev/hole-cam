@@ -37,7 +37,9 @@ def context_for(found):
 
 def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0, trace=None):
     """Return findings as [{line, check, message}]. bottom_z enables the too-deep check.
-    Pass a list as trace to collect every move as {tool, kind: rapid|feed, from, to} for the preview."""
+    Pass a list as trace to collect the program's motion for the preview and cycle time: every move as
+    {tool, kind: rapid|feed, line, from, to, seconds}, and every tool change as {tool, kind: tool_change, line, seconds}.
+    G83 holes are expanded into their individual pecks."""
     local_tops = {(round(x, 3), round(y, 3)): z for (x, y), z in (local_tops or {}).items()}
     findings = []
 
@@ -54,7 +56,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
     z = math.inf  # the machine starts at home, above everything
     absolute, motion, cycle, retract_to_initial = True, 0, None, True
     spindle, tool, pending_tool, offset, offset_missing_flagged = False, None, None, None, False
-    cycle_z = cycle_r = initial_z = None
+    cycle_z = cycle_r = cycle_q = initial_z = feed = None
     ended = False
 
     def needs_offset(n):
@@ -63,9 +65,26 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
             flag(n, "no-tool-length-offset", f"T{tool} moves in Z with no G43 H{tool} after the tool change.")
             offset_missing_flagged = True
 
-    def move(kind, a, b):
-        if trace is not None and a != b and all(v is not None and math.isfinite(v) for v in (*a, *b)):
-            trace.append({"tool": tool, "kind": kind, "from": list(a), "to": list(b)})
+    def move(kind, a, b, n):
+        if trace is None or a == b or not all(v is not None and math.isfinite(v) for v in (*a, *b)):
+            return
+        # shortcut: rapids timed as straight lines at the rapid rate; real machines dogleg and accelerate.
+        rate = machine["rapid_rate"] if kind == "rapid" else feed
+        seconds = math.dist(a, b) / rate * 60 if rate else 0.0
+        trace.append({"tool": tool, "kind": kind, "line": n, "from": list(a), "to": list(b), "seconds": round(seconds, 3)})
+
+    def pecks(px, py, n):
+        """G83: feed one peck deeper, rapid out to R to clear chips, rapid back to just above the last bottom, repeat."""
+        clearance, bottom, start = machine["peck_clearance"], cycle_r, cycle_r
+        while bottom > cycle_z:
+            if bottom < cycle_r:
+                start = min(cycle_r, bottom + clearance)
+                move("rapid", (px, py, cycle_r), (px, py, start), n)
+            nxt = max(cycle_z, bottom - cycle_q)
+            move("feed", (px, py, start), (px, py, nxt), n)
+            bottom = nxt
+            if bottom > cycle_z:
+                move("rapid", (px, py, bottom), (px, py, cycle_r), n)
 
     def deep(n, target):
         if bottom_z is not None and target < bottom_z - max_breakthrough:
@@ -95,11 +114,14 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
             flag(n, "over-machine-limit", f"S{val['S']:g} rpm; the machine maxes out at {machine['max_rpm']}.")
         if "F" in val and val["F"] > machine["max_feed"]:
             flag(n, "over-machine-limit", f"F{val['F']:g} mm/min; the machine maxes out at {machine['max_feed']}.")
+        if "F" in val: feed = val["F"]
 
         if 6 in m:
             if cycle is not None:
                 flag(n, "unsafe-end", "Tool change while a drilling cycle is still active; add G80 first.")
             tool, spindle, offset, offset_missing_flagged = pending_tool, False, None, False
+            if trace is not None:
+                trace.append({"tool": tool, "kind": "tool_change", "line": n, "seconds": machine["tool_change_seconds"]})
         if 3 in m or 4 in m: spindle = True
         if 30 in m or 2 in m:
             ended = True
@@ -125,7 +147,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
             return val[axis] if absolute or cur is None or cur == math.inf else cur + val[axis]
 
         if cycle is not None and ({"X", "Y"} & val.keys() or any(c in CYCLES for c in g)):
-            cycle_z, cycle_r = val.get("Z", cycle_z), val.get("R", cycle_r)
+            cycle_z, cycle_r, cycle_q = val.get("Z", cycle_z), val.get("R", cycle_r), val.get("Q", cycle_q)
             nx, ny = target("X", x), target("Y", y)
             if not spindle:
                 flag(n, "spindle-off-cut", f"G{cycle} drills X{nx:g} Y{ny:g} with the spindle stopped; add M03.")
@@ -136,10 +158,13 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
                 flag(n, "rapid-into-part", f"R{cycle_r:g} is below the surface at X{nx:g} Y{ny:g} (Z{top_at(nx, ny):g}); the rapid to R hits the part.")
             deep(n, cycle_z)
             back = initial_z if retract_to_initial else cycle_r
-            move("rapid", (x, y, z), (nx, ny, z))
-            move("rapid", (nx, ny, z), (nx, ny, cycle_r))
-            move("feed", (nx, ny, cycle_r), (nx, ny, cycle_z))
-            move("rapid", (nx, ny, cycle_z), (nx, ny, back))
+            move("rapid", (x, y, z), (nx, ny, z), n)
+            move("rapid", (nx, ny, z), (nx, ny, cycle_r), n)
+            if cycle == 83 and cycle_q and cycle_q > 0:
+                pecks(nx, ny, n)
+            else:
+                move("feed", (nx, ny, cycle_r), (nx, ny, cycle_z), n)
+            move("rapid", (nx, ny, cycle_z), (nx, ny, back), n)
             x, y, z = nx, ny, back
         elif {"X", "Y", "Z"} & val.keys():
             nx, ny, nz = target("X", x), target("Y", y), target("Z", z)
@@ -155,7 +180,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
                 if not spindle:
                     flag(n, "spindle-off-cut", f"G0{motion} feed move with the spindle stopped; add M03.")
                 deep(n, nz)
-            move("rapid" if motion == 0 else "feed", (x, y, z), (nx, ny, nz))
+            move("rapid" if motion == 0 else "feed", (x, y, z), (nx, ny, nz), n)
             x, y, z = nx, ny, nz
 
         if 5 in m: spindle = False

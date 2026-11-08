@@ -55,7 +55,9 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
 
     job = {**found, "mesh": mesh, "plan": None, "plan_errors": [],
            "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
-           "tool_numbers": {t["id"]: t["number"] for t in TOOLS}}
+           "tool_numbers": {t["id"]: t["number"] for t in TOOLS},
+           "tool_info": {t["number"]: {k: t[k] for k in ("type", "diameter", "point_angle", "flute_length")} for t in TOOLS},
+           "cycle_seconds": None}
     if not found["holes"]:
         job["plan_errors"] = ["No holes that can be drilled from the top were found."]
         return job
@@ -75,7 +77,8 @@ def create_job(file: UploadFile, material: str = Form(), client=Depends(anthropi
 
     gcode = generate(found, result["plan"], TOOLS, MATERIALS[material], MACHINE, name=Path(name).stem)
     trace = []
-    job.update(gcode=gcode, findings=check(gcode, MACHINE, **context_for(found), trace=trace), toolpath=trace)
+    job.update(gcode=gcode, findings=check(gcode, MACHINE, **context_for(found), trace=trace), toolpath=trace,
+               cycle_seconds=round(sum(m["seconds"] for m in trace), 1))
     job["export_ok"] = not job["findings"]
     return job
 

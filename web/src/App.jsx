@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import Viewer from './Viewer.jsx'
+import { useEffect, useRef, useState } from 'react'
+import Viewer, { clock } from './Viewer.jsx'
 import { toolColor } from './colors.js'
 
 const fmt = (n) => Number(n.toFixed(3)).toString()
@@ -16,6 +16,7 @@ export default function App() {
   const [job, setJob] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [activeLine, setActiveLine] = useState(null)
 
   useEffect(() => {
     fetch('/materials')
@@ -30,6 +31,7 @@ export default function App() {
     setBusy(true)
     setError(null)
     setJob(null)
+    setActiveLine(null)
     const body = new FormData()
     body.append('file', file)
     body.append('material', material)
@@ -76,23 +78,22 @@ export default function App() {
         </form>
 
         {error && <p className="alert" role="alert">{error}</p>}
-        {job && <Results job={job} onDownload={download} />}
+        {job && <Results job={job} onDownload={download} activeLine={activeLine} />}
       </aside>
 
       <main className="stage">
         {job
-          ? <Viewer mesh={job.mesh} toolpath={job.toolpath} />
+          // setActiveLine is stable, so the viewer's scene is not rebuilt on every line change
+          ? <Viewer job={job} onLine={setActiveLine} />
           : <div className="empty"><p>Upload a part to see it here with its toolpath.</p></div>}
-        {job?.toolpath.length > 0 && (
-          <p className="legend small"><span className="dash" /> rapid <span className="solid" /> cutting</p>
-        )}
       </main>
     </div>
   )
 }
 
-function Results({ job, onDownload }) {
-  const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers } = job
+function Results({ job, onDownload, activeLine }) {
+  const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers, toolpath, cycle_seconds } = job
+  const toolChanges = toolpath.filter((m) => m.kind === 'tool_change').length
   return (
     <>
       <section className="card">
@@ -143,14 +144,31 @@ function Results({ job, onDownload }) {
           {findings.length === 0
             ? <p className="ok">All 6 checks passed.</p>
             : <ul className="findings">{findings.map((f, i) => <li key={i} className="small"><strong>Line {f.line}</strong> {f.message}</li>)}</ul>}
+          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {toolChanges} tool change{toolChanges === 1 ? '' : 's'}</p>
           <button onClick={onDownload} disabled={!export_ok}>Download .nc</button>
           {!export_ok && <p className="muted small">Download is blocked until every check passes.</p>}
           <details>
             <summary>G-code ({gcode.split('\n').length - 1} lines)</summary>
-            <pre>{gcode}</pre>
+            <Program gcode={gcode} activeLine={activeLine} />
           </details>
         </section>
       )}
     </>
+  )
+}
+
+// The program with the line the simulation is on highlighted and kept in view.
+function Program({ gcode, activeLine }) {
+  const pre = useRef(null)
+  useEffect(() => {
+    const el = pre.current?.querySelector('.active')
+    if (el) pre.current.scrollTop = el.offsetTop - pre.current.clientHeight / 2
+  }, [activeLine])
+  return (
+    <pre ref={pre}>
+      {gcode.split('\n').map((line, i) => (
+        <span key={i} className={i + 1 === activeLine ? 'active' : undefined}>{line}{'\n'}</span>
+      ))}
+    </pre>
   )
 }

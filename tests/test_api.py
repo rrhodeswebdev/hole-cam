@@ -35,7 +35,10 @@ def test_good_job_returns_program_checks_and_preview(api):
     assert job["findings"] == [] and job["export_ok"] is True
     assert len(job["holes"]) == 4 and job["mesh"]["triangles"]
     assert max(v[2] for v in job["mesh"]["vertices"]) == 0  # mesh is in work coordinates, Z0 on top
-    assert sum(m["kind"] == "feed" for m in job["toolpath"]) == 8  # 4 spots + 4 drilled holes
+    # 4 spots + 1 plain-drilled hole + 5 pecks on each of the 3 G83 holes
+    assert sum(m["kind"] == "feed" for m in job["toolpath"]) == 20
+    assert sum(m["kind"] == "tool_change" for m in job["toolpath"]) == 3
+    assert job["cycle_seconds"] == round(sum(m["seconds"] for m in job["toolpath"]), 1) > 0
 
 
 def test_rejected_plan_gives_errors_and_no_program(api):
