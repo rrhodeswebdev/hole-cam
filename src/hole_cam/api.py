@@ -14,13 +14,15 @@ from fastapi.staticfiles import StaticFiles
 
 from hole_cam.checks import check, context_for
 from hole_cam.gcode import _load, generate
-from hole_cam.holes import load_part
+from hole_cam.holes import load_part, mesh
 from hole_cam.planner import drawing_callouts, plan_job, revise_plan
 
 MAX_UPLOAD = 20 * 1024 * 1024  # bytes, for the part and for the drawing
 MAX_REQUEST = 500  # characters in a plan change request
 WEB = Path(__file__).parents[2] / "web" / "dist"
 TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
+TOOL_NUMBERS = {t["id"]: t["number"] for t in TOOLS}
+TOOL_INFO = {t["number"]: {k: t.get(k) for k in ("type", "diameter", "point_angle", "flute_length", "pitch")} for t in TOOLS}
 
 app = FastAPI(title="Hole-CAM")
 
@@ -87,10 +89,10 @@ def _read_part(file, material):
         path.write_bytes(data)
         try:
             shape, found = load_part(path)
-            mesh = _mesh(shape, found["part"]["top_z"])
+            part_mesh = mesh(shape, found["part"]["top_z"])
         except Exception:
             raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
-    return found, mesh, name
+    return found, part_mesh, name
 
 
 def _read_drawing(file):
@@ -110,8 +112,7 @@ def _read_drawing(file):
 def _job(found, mesh):
     return {**found, "mesh": mesh, "plan": None, "plan_errors": [],
             "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
-            "tool_numbers": {t["id"]: t["number"] for t in TOOLS},
-            "tool_info": {t["number"]: {k: t.get(k) for k in ("type", "diameter", "point_angle", "flute_length", "pitch")} for t in TOOLS},
+            "tool_numbers": TOOL_NUMBERS, "tool_info": TOOL_INFO,
             "cycle_seconds": None, "drawing": [], "drill_oversize": MACHINE["drill_oversize"]}
 
 
@@ -141,10 +142,3 @@ def _finish(job, found, result, material, name):
 
 if WEB.is_dir():  # built UI (cd web && npm run build); mounted last so the API routes win
     app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
-
-
-def _mesh(shape, top_z):
-    """Triangle mesh of the part in work coordinates (Z0 = top of the part), for three.js."""
-    verts, tris = shape.tessellate(0.1, 0.2)
-    return {"vertices": [[round(v.x, 3), round(v.y, 3), round(v.z - top_z, 3)] for v in verts],
-            "triangles": [list(t) for t in tris]}

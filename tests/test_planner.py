@@ -33,6 +33,7 @@ def test_hand_plan_is_valid():
     (lambda p: op(p, 3).update(tool_id="DRL-6.0"), "6.0 mm drill on a 6.8 mm hole"),
     (lambda p: op(p, 2).update(cycle="G81"), "needs G83"),
     (lambda p: op(p, 2).update(peck=0), "peck depth above 0"),
+    (lambda p: op(p, 0).update(cycle="G83", peck=0), "peck depth above 0"),
     (lambda p: op(p, 0).update(hole_ids=[1, 2, 3]), "hole 4 is drilled before it is spotted"),
     (lambda p: op(p, 0).update(depth=6), "spot depth"),
     (lambda p: op(p, 3).update(hole_ids=[1]), "hole 2 (6.8 mm) is not drilled"),

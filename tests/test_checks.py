@@ -76,3 +76,21 @@ def test_stacked_holes_use_the_lowest_top_whatever_their_order():
     for holes in ([cbore, under], [under, cbore]):
         ctx = context_for({"part": {"top_z": 30, "bottom_z": 0}, "holes": holes})
         assert ctx["local_tops"] == {(10, 10): -7}
+
+
+def test_g43_with_no_h_word_is_flagged_not_a_crash():
+    found = check("T1 M06\nG00 G43 Z25. S1000 M03\nM30\n", MACHINE)
+    assert [f["check"] for f in found] == ["no-tool-length-offset"]
+    assert "no H word" in found[0]["message"]
+
+
+@pytest.mark.parametrize("cycle", ["G98 G81 X1. Y1. Z-5. F100.", "G98 G81 X1. Y1. R2. F100."])
+def test_canned_cycle_missing_z_or_r_is_a_clear_error(cycle):
+    with pytest.raises(ValueError, match="line 3: G81 has no Z or no R"):
+        check(f"T1 M06\nG00 G43 H1 Z25. S1000 M03\n{cycle}\nG80\nM30\n", MACHINE)
+
+
+def test_incremental_move_after_going_home_stays_above_the_part():
+    """G91 Z-10. from home is 10 mm below home, still far above the part, not a rapid to Z-10."""
+    program = "T1 M06\nG00 G43 H1 Z25. S1000 M03\nG91 G28 Z0.\nG00 Z-10.\nG90\nM30\n"
+    assert check(program, MACHINE) == []

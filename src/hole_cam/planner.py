@@ -331,7 +331,8 @@ def validate(plan, found, tools, machine):
                               "drill it 0.1 to 0.4 mm under and ream it")
             if h["depth"] > machine["peck_ratio"] * h["diameter"] and op["cycle"] != "G83":
                 errors.append(f"{where}: hole {hid} is {h['depth'] / h['diameter']:.1f}xD deep and needs G83 peck drilling")
-        if op["op"] == "drill" and op["cycle"] == "G83" and op["peck"] <= 0:
+        # Any op, with gcode.py's default peck: a spot drill on G83 Q0 alarms the machine too.
+        if op.get("cycle") == "G83" and op.get("peck", tool["diameter"]) <= 0:
             errors.append(f"{where}: G83 needs a peck depth above 0")
         if (op["op"] == "ream") != (op.get("cycle") == "G85"):
             errors.append(f"{where}: reaming uses G85 (feed in and back out), and only reaming does")

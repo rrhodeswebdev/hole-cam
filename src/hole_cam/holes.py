@@ -10,7 +10,12 @@ Depth runs from the opening to the end of the full-diameter section, so a drill-
 import math
 
 import cadquery as cq
+from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED
+from OCP.TopExp import TopExp
+from OCP.TopLoc import TopLoc_Location
+from OCP.TopTools import TopTools_IndexedMapOfShape
 
 TOL = 1e-3  # mm
 # Rotation (axis, degrees) that turns each side of the model to face up.
@@ -39,6 +44,28 @@ def find_holes(part):
     return load_part(part)[1]
 
 
+def mesh(shape, top_z):
+    """Triangle mesh of the part in work coordinates (Z0 = top of the part), for three.js. The same as
+    shape.tessellate(0.1, 0.2), which iterates each face's triangles from Python at ~5 ms a face."""
+    shape.mesh(0.1, 0.2)
+    vertices, triangles = [], []
+    for face in _faces(shape):
+        loc = TopLoc_Location()
+        poly = BRep_Tool.Triangulation_s(face.wrapped, loc)
+        if poly is None:
+            continue
+        trsf, base = loc.Transformation(), len(vertices) - 1  # OCP numbers nodes from 1
+        flip = face.wrapped.Orientation() == TopAbs_REVERSED
+        for i in range(1, poly.NbNodes() + 1):
+            p = poly.Node(i).Transformed(trsf)
+            vertices.append([round(p.X(), 3), round(p.Y(), 3), round(p.Z() - top_z, 3)])
+        for i in range(1, poly.NbTriangles() + 1):
+            t = poly.Triangle(i)
+            a, b, c = (t.Value(k) + base for k in ((1, 3, 2) if flip else (1, 2, 3)))
+            triangles.append([a, b, c])
+    return {"vertices": vertices, "triangles": triangles}
+
+
 def _found(shape, holes, skipped):
     bb = shape.BoundingBox()
     return {"part": {"top_z": round(bb.zmax, 3), "bottom_z": round(bb.zmin, 3)}, "holes": holes, "skipped": skipped}
@@ -63,19 +90,24 @@ def _find(shape):
             bb = face.BoundingBox()
             groups.setdefault((c["x"], c["y"], c["r"]), []).append([bb.zmin, bb.zmax, [face]])
 
+    neighbors = {}  # edge -> faces that share it; built once (cq's edge.ancestors() rebuilds it for every edge)
+    for face in _faces(shape):
+        for edge in _edges(face):
+            neighbors.setdefault(edge, []).append(face)
+
     holes = []
     for (x, y, r), spans in groups.items():
         for zmin, zmax, faces in _merge(spans):
             if not _full_circle(faces):
                 continue  # e.g. a corner radius that lines up with a hole above or below it
             mid = (zmin + zmax) / 2
-            if _closed(shape, faces, zmax, mid):
+            if _closed(neighbors, faces, zmax, mid):
                 skipped.append({"diameter": round(2 * r, 3), "reason": "opens on the bottom"})
                 continue
             holes.append({
                 "x": x, "y": y, "diameter": round(2 * r, 3),
                 "depth": round(zmax - zmin, 3),
-                "through": not _closed(shape, faces, zmin, mid),
+                "through": not _closed(neighbors, faces, zmin, mid),
                 "top_z": round(zmax, 3),
             })
 
@@ -88,12 +120,12 @@ def _find(shape):
 def _holes_any_axis(shape):
     """Inner cylinders grouped by axis line and radius, keeping only groups that go all the way around."""
     groups = {}
-    for face in shape.Faces():
+    for face in _faces(shape):
         if face.geomType() != "CYLINDER":
             continue
         cyl = BRepAdaptor_Surface(face.wrapped).Cylinder()
         loc, d, r = cyl.Axis().Location(), cyl.Axis().Direction(), cyl.Radius()
-        p = face.Edges()[0].startPoint()
+        p = _edges(face)[0].startPoint()
         if face.normalAt(p).dot(cq.Vector(p.x - loc.X(), p.y - loc.Y(), p.z - loc.Z())) > 0:
             continue  # outer surface (a boss or a rounded edge), not a hole
         axis = cq.Vector(d.X(), d.Y(), d.Z())
@@ -138,17 +170,31 @@ def _merge(spans):
     return out
 
 
-def _closed(shape, faces, z, mid):
+def _closed(neighbors, faces, z, mid):
     """Is the hole closed at height z? Yes if the face there is a drill-point cone or a floor/ceiling facing into the hole."""
     for face in faces:
-        for edge in face.Edges():
+        for edge in _edges(face):
             if edge.geomType() != "CIRCLE" or abs(edge.Center().z - z) > TOL:
                 continue
-            for other in edge.ancestors(shape, "Face"):
-                if other.isSame(face) or any(other.isSame(f) for f in faces):
+            for other in neighbors[edge]:
+                if other in faces:
                     continue
                 if other.geomType() == "CONE":
                     return True
                 if other.geomType() == "PLANE" and other.normalAt(edge.Center()).z * (mid - z) > 0:
                     return True
     return False
+
+
+# shape.Faces() and face.Edges() iterate an OCP map from Python, which costs ~5 ms a call; reading it by index doesn't.
+def _faces(shape):
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape.wrapped, TopAbs_FACE, found)
+    return [cq.Face(found.FindKey(i)) for i in range(1, found.Extent() + 1)]
+
+
+def _edges(face):
+    found = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(face.wrapped, TopAbs_EDGE, found)
+    edges = [cq.Edge(found.FindKey(i)) for i in range(1, found.Extent() + 1)]
+    return [e for e in edges if not BRep_Tool.Degenerated_s(e.wrapped)]

@@ -140,6 +140,8 @@ export default function Viewer({ job, onLine }) {
   const steps = useMemo(() => describeSteps(events, job.holes, job.tool_info ?? {}), [events, job])
   const play = useRef({ t: 0, playing: false, speed: DEFAULT_SPEED })
   const [ui, setUi] = useState({ t: 0, playing: false, speed: DEFAULT_SPEED, i: 0 })
+  // ui is a frame behind when job changes (revise, undo); the new program can have fewer moves.
+  const i = Math.min(ui.i, events.length - 1)
 
   useEffect(() => {
     const el = ref.current
@@ -314,9 +316,9 @@ export default function Viewer({ job, onLine }) {
       {events.length > 0 && (
         <>
           <div className="step">
-            <p className="step-what">{steps[ui.i].what}</p>
-            <p className="step-tool">{steps[ui.i].tool}</p>
-            <code className="step-line">N{events[ui.i].line}  {lines[events[ui.i].line - 1]}</code>
+            <p className="step-what">{steps[i].what}</p>
+            <p className="step-tool">{steps[i].tool}</p>
+            <code className="step-line">N{events[i].line}  {lines[events[i].line - 1]}</code>
           </div>
           <p className="legend small"><span className="dash" /> rapid <span className="solid" /> cutting</p>
           <div className="sim" role="group" aria-label="Machining simulation">

@@ -15,6 +15,7 @@ import re
 import sys
 
 WORD = re.compile(r"([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))")
+COMMENT = re.compile(r"\(.*?\)|;.*")
 CYCLES = {73, 81, 82, 83, 84, 85, 86, 89}
 CHECKS = {
     "rapid-into-part": "Rapid move below the top of the part: the tool can crash into the part",
@@ -94,8 +95,9 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
         if bottom_z is not None and target < bottom_z - max_breakthrough:
             flag(n, "too-deep", f"Z{target:g} is {bottom_z - target:.1f} mm below the bottom of the part (limit {max_breakthrough:g}).")
 
-    for n, raw in enumerate(program.splitlines(), 1):
-        line = re.sub(r"\(.*?\)|;.*", "", raw).upper().strip()
+    lines = program.splitlines()
+    for n, raw in enumerate(lines, 1):
+        line = COMMENT.sub("", raw).upper().strip()
         if not line or line == "%" or line.startswith("O"):
             continue
         words = WORD.findall(line)
@@ -112,7 +114,8 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
         if 43 in g:
             offset = val.get("H")
             if tool is not None and offset != tool:
-                flag(n, "no-tool-length-offset", f"G43 H{offset:g} is the wrong offset for T{tool}.")
+                h_word = "with no H word" if offset is None else f"H{offset:g}"
+                flag(n, "no-tool-length-offset", f"G43 {h_word} is the wrong offset for T{tool}.")
         if "T" in val: pending_tool = int(val["T"])
         if "S" in val and val["S"] > machine["max_rpm"]:
             flag(n, "over-machine-limit", f"S{val['S']:g} rpm; the machine maxes out at {machine['max_rpm']}.")
@@ -148,10 +151,13 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
         def target(axis, cur):
             if axis not in val:
                 return cur
-            return val[axis] if absolute or cur is None or cur == math.inf else cur + val[axis]
+            # From home (Z inf) an incremental move stays at an unknown height above the part: inf + d is inf.
+            return val[axis] if absolute or cur is None else cur + val[axis]
 
         if cycle is not None and ({"X", "Y"} & val.keys() or any(c in CYCLES for c in g)):
             cycle_z, cycle_r, cycle_q = val.get("Z", cycle_z), val.get("R", cycle_r), val.get("Q", cycle_q)
+            if cycle_z is None or cycle_r is None:
+                raise ValueError(f"line {n}: G{cycle} has no Z or no R word, so no machine can run it")
             nx, ny = target("X", x), target("Y", y)
             if not spindle:
                 flag(n, "spindle-off-cut", f"G{cycle} drills X{nx:g} Y{ny:g} with the spindle stopped; add M03.")
@@ -194,7 +200,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
         if 5 in m: spindle = False
 
     if not ended:
-        flag(len(program.splitlines()), "unsafe-end", "No M30 at the end of the program.")
+        flag(len(lines), "unsafe-end", "No M30 at the end of the program.")
     return findings
 
 

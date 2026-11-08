@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Viewer, { clock } from './Viewer.jsx'
 import { toolColor } from './colors.js'
 
@@ -11,7 +11,7 @@ const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
   ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
   : `T${toolNumbers[op.tool_id]} ${OP_NAMES[op.op]} · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
 // Plain loop rather than Object.groupBy, which older browsers (before Chrome 117 / Safari 17.4) lack.
-const countBy = (list, key) => list.reduce((acc, x) => ({ ...acc, [key(x)]: (acc[key(x)] ?? 0) + 1 }), {})
+const countBy = (list, key) => list.reduce((acc, x) => { acc[key(x)] = (acc[key(x)] ?? 0) + 1; return acc }, {})
 const toolChanges = (job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
 
 function errorText(detail, status) {
@@ -153,6 +153,7 @@ export default function App() {
 
 function Results({ job, onDownload, activeLine, change }) {
   const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers, cycle_seconds } = job
+  const changes = toolChanges(job)
   return (
     <>
       <section className="card">
@@ -212,7 +213,7 @@ function Results({ job, onDownload, activeLine, change }) {
           {findings.length === 0
             ? <p className="ok">All 6 checks passed.</p>
             : <ul className="findings">{findings.map((f, i) => <li key={i} className="small"><strong>Line {f.line}</strong> {f.message}</li>)}</ul>}
-          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {toolChanges(job)} tool change{toolChanges(job) === 1 ? '' : 's'}</p>
+          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {changes} tool change{changes === 1 ? '' : 's'}</p>
           <button onClick={onDownload} disabled={!export_ok}>Download .nc</button>
           {!export_ok && <p className="muted small">Download is blocked until every check passes.</p>}
           <details>
@@ -228,13 +229,14 @@ function Results({ job, onDownload, activeLine, change }) {
 // The program with the line the simulation is on highlighted and kept in view.
 function Program({ gcode, activeLine }) {
   const pre = useRef(null)
+  const lines = useMemo(() => gcode.split('\n'), [gcode])
   useEffect(() => {
     const el = pre.current?.querySelector('.active')
     if (el) pre.current.scrollTop = el.offsetTop - pre.current.clientHeight / 2
   }, [activeLine])
   return (
     <pre ref={pre}>
-      {gcode.split('\n').map((line, i) => (
+      {lines.map((line, i) => (
         <span key={i} className={i + 1 === activeLine ? 'active' : undefined}>{line}{'\n'}</span>
       ))}
     </pre>
@@ -283,6 +285,7 @@ function RevisionResult({ job, revision, onUndo }) {
   const removed = before.filter((l) => !after.includes(l))
   const added = after.filter((l) => !before.includes(l))
   const reordered = !removed.length && !added.length && before.join() !== after.join()
+  const hadProgram = Boolean(previous.gcode)
   const dt = job.cycle_seconds - previous.cycle_seconds
   return (
     <div className="revision" aria-live="polite">
@@ -297,9 +300,10 @@ function RevisionResult({ job, revision, onUndo }) {
       {reordered && <p className="small">Same operations in a new order.</p>}
       {!removed.length && !added.length && !reordered && <p className="small">No change to the operations.</p>}
       <p className="small">
-        Cycle time {clock(previous.cycle_seconds)} → <strong>{clock(job.cycle_seconds)}</strong>
-        {Math.abs(dt) >= 0.5 && <span className={dt < 0 ? 'ok-text' : 'bad'}> ({dt < 0 ? '−' : '+'}{Math.round(Math.abs(dt))} s)</span>}
-        {' · '}tool changes {toolChanges(previous)} → {toolChanges(job)}
+        {/* A rejected plan has no program, so there's no cycle time or tool changes to compare against. */}
+        Cycle time {hadProgram && <>{clock(previous.cycle_seconds)} → </>}<strong>{clock(job.cycle_seconds)}</strong>
+        {hadProgram && Math.abs(dt) >= 0.5 && <span className={dt < 0 ? 'ok-text' : 'bad'}> ({dt < 0 ? '−' : '+'}{Math.round(Math.abs(dt))} s)</span>}
+        {' · '}tool changes {hadProgram && `${toolChanges(previous)} → `}{toolChanges(job)}
         {' · '}{job.findings.length ? <span className="bad">safety checks failed</span> : <span className="ok-text">checks pass</span>}
       </p>
       <button type="button" className="secondary" onClick={onUndo}>Undo</button>

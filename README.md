@@ -56,7 +56,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **117 automated tests:** `uv run pytest`.
+- **122 automated tests:** `uv run pytest`.
 - **A second opinion from LinuxCNC:** every program below was also run through LinuxCNC's own G-code interpreter, the one real machines run (`scripts/linuxcnc_check.py`, in Docker). All 10 read without error, every move matches the toolpath the safety checks traced (up to 289 moves each), and the holes LinuxCNC's moves cut match the plan, taps included. Its first run found two real bugs, now fixed: a `G43` line relying on `G00` being still in effect, which LinuxCNC rejects, and nested parentheses in tool comments. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#proving-the-programs-out-on-linuxcnc).
 - **Real parts:** 11 real CAD parts from NIST, most of them inch parts modeled on their side or around their center. They exposed three hole-finding bugs, a missing set of inch drills and a gap in the safety checks; all are fixed. Four parts were checked against their drawings and match exactly, and two are now regression tests. Live plans on four parts all passed the safety checks. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md).
 - **Hole finding** is also tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
