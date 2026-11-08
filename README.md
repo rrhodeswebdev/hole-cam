@@ -4,8 +4,8 @@ Upload a STEP part and get back a checked drilling program. Claude plans the job
 
 It's a weekend-sized version of the "engineering model → machining strategy → G-code" problem: holes only, one setup, a 3-axis mill.
 
-![Hole-CAM mid-playback: a 6.8 mm drill peck drilling a plate, next to Claude's revised plan after the request "Peck every hole, 2 mm at a time", with the operations changed and the cycle time going from 0:34 to 0:39](docs/screenshot.png)
-<sub>A live run on the mixed test plate: the plan, its reasons and the revision summary are Claude's. The view is paused partway through the revised program.</sub>
+![Hole-CAM on a real NIST part: the STEP file is uploaded and planned, the drills play through the program at 1× then 5×, then the request "Peck every hole, 2 mm at a time" is sent and Claude's revision appears with the operations changed and the cycle time going from 1:37 to 1:50](docs/demo.gif)
+<sub>NIST part FTC-07, an open box with counterbored holes on bosses inside. The plan, the warnings and the revision summary are Claude's, from a live run. The recording replays those answers, and the waits are cut short: live, the plan and the revision took about 75 s together.</sub>
 
 ## The user and the problem
 
@@ -43,6 +43,9 @@ flowchart LR
    The checks work on any Fanuc-style drilling program, not just this tool's.
 6. **Preview:** the part and toolpath in 3D. The toolpath is drawn by reading back the generated G-code, so it shows what the machine will do, not what was intended. The view plays the program back: the drill moves through every move, including each peck out to clear chips, and the holes fill in as they're drilled. The G-code line being run is highlighted. The same moves give an estimated cycle time (about 32 s for the test plate).
 7. **Change the plan in plain English:** a machinist types a change like "do the deep holes first" or "peck every hole, 2 mm at a time". Claude revises the plan and explains what it changed, or why it couldn't. The revision is validated and checked like any plan. The page shows the operations added and removed and the cycle time before and after, with Undo.
+
+![Hole-CAM mid-playback: a 6.8 mm drill peck drilling a plate, next to Claude's revised plan after the request "Peck every hole, 2 mm at a time", with the operations changed and the cycle time going from 0:34 to 0:39](docs/screenshot.png)
+<sub>A live run on the mixed test plate, paused partway through the revised program.</sub>
 
 ## Where the AI is, and where it isn't
 
