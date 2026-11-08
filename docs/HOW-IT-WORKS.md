@@ -30,9 +30,12 @@ The model is loaded with CadQuery, which is built on the OpenCascade CAD kernel.
 
 - **Cylindrical faces only.** Every round hole has an inside wall that is a cylinder.
 - **Inside walls, not outside ones.** A raised round boss also has a cylindrical face, but its surface faces outward. The code checks which way each surface faces and keeps only the inward-facing ones.
-- **Vertical holes only.** Holes along the X or Y axis can't be drilled from the top in one setup. They're reported as *skipped*, with the reason.
+- **All the way around.** The rounded inside corner of a pocket, the end of a slot and the lobe of a keyhole are inward-facing cylinders too, but only part of a circle. A hole's faces must cover the full 360°. On a real NIST part, this cut the count from 70 "holes" to the 20 on its drawing.
+- **Split faces are merged.** CAD programs often store one hole as two half-cylinders. Faces that share an axis and radius are joined back into one hole.
+
+**Choosing the setup.** A CAD model isn't always drawn with the side to drill facing up; real parts are often modeled on their side. Hole-CAM counts the holes along each axis, then tries both faces along the axis with the most. It picks the face that gives the most drillable holes and turns the part so that face is up. It also moves the part so its front-left corner is at X0 Y0, whatever the CAD file's own origin was. Then:
+- **Vertical holes only.** Holes on the other sides can't be drilled in this setup. They're reported as *skipped: on another side*.
 - **Opening upward.** A hole drilled up from the underside is also skipped. It's recognised because its top end is closed.
-- **Split faces are merged.** CAD programs often store one hole as two half-cylinders. Faces that share an axis and radius and touch end to end are joined back into one hole.
 
 **Through or blind** is decided by what's at the bottom of the hole:
 - If the bottom edge opens onto the part's underside, it's a **through** hole.
@@ -74,7 +77,7 @@ Claude can also add warnings nobody asked for. On the test plate, it noticed tha
 Plain code checks every plan, because a well-formatted plan can still be wrong. It rejects a plan if:
 
 - a tool can't do the operation (for example, a spot drill used to drill a hole)
-- a drill's diameter doesn't match its hole (within 0.05 mm)
+- a drill's diameter doesn't match its hole (within 0.02 mm)
 - a hole is drilled before it's spotted
 - a hole is drilled twice, or skipped even though a drill fits it
 - a drill's flutes are too short for the depth it has to reach
@@ -319,9 +322,10 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 ## What it doesn't do
 
 - Holes only: no tapping, reaming, pockets, chamfers or profiles.
-- One setup from the top: holes on the sides or underneath are skipped.
-- Metric units and Fanuc-style G-code only.
-- Counterbored holes come out as two separate holes, one per diameter.
+- One setup: the part is turned to whichever of its six sides has the most holes to drill, and holes on the other sides, or on angled faces, are skipped.
+- Programs are metric and Fanuc-style only, though inch parts and inch drills work.
+- Counterbored holes come out as two separate holes, one per diameter, drilled with a pointed drill. Claude warns when a flat floor is needed.
+- Tool reach isn't checked: a hole deep inside a box needs a tool and holder long enough to reach it without hitting the walls.
 - The rapid-move check looks at each move's start and end points, not the full path. Below the top of the part, it only knows surface heights at hole centers.
 - The cycle time is an estimate from typical machine values, not a measured run.
 - The speeds and feeds are unverified starting values, and the programs haven't been run on a machine. Nothing it produces should run without a machinist's review.

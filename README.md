@@ -28,7 +28,7 @@ flowchart LR
     safety -->|fail| blocked["Show problems,<br/>download blocked"]
 ```
 
-1. **Find holes:** reads the STEP geometry and finds inner cylindrical faces, merging the split halves many CAD exporters produce. It tells through holes from blind holes by what closes the bottom (the part's underside, a flat floor or a drill point). Holes it can't drill in one top-side setup are reported as skipped, with a reason.
+1. **Find holes:** reads the STEP geometry and finds inner cylindrical faces that go all the way around, merging the split halves many CAD exporters produce. Rounded inside corners and slot ends are curved too, but they aren't holes. The part is turned so the side with the most drillable holes faces up, and moved so its front-left corner is X0 Y0. It tells through holes from blind holes by what closes the bottom (the part's underside, a flat floor or a drill point). Holes it can't drill in one top-side setup are reported as skipped, with a reason.
 2. **Plan:** Claude gets the holes, the material, the tool library and the machine limits. It returns a plan in a fixed JSON format: spot drill, then drill, G81 or G83 peck drilling, holes grouped by tool, and a one-line reason for each operation.
 3. **Validate:** plain code checks the plan. It rejects the wrong drill size, holes drilled before they're spotted, holes drilled twice or missed, drills too short for the depth, and deep holes without pecking. A rejected plan goes back to Claude once with the errors listed.
 4. **Write G-code:** plain code. Speeds and feeds come from a material table, never from the model.
@@ -52,8 +52,9 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **72 automated tests:** `uv run pytest`.
-- **Hole finding** is tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
+- **80 automated tests:** `uv run pytest`.
+- **Real parts:** 11 real CAD parts from NIST, most of them inch parts modeled on their side or around their center. They exposed three hole-finding bugs, a missing set of inch drills and a gap in the safety checks; all are fixed. Three parts were checked against their drawings and match exactly, and two are now regression tests. Live plans on four parts all passed the safety checks. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md).
+- **Hole finding** is also tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
@@ -62,7 +63,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 - **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on.
 
 **Not verified yet:**
-- [ ] A STEP file exported from real CAD software
+- [x] STEP files exported from real CAD software ([11 NIST parts](docs/REAL-PARTS.md))
 - [ ] The programs proven out on a machine or in a simulator (NCViewer / CAMotics)
 - [ ] Speeds and feeds checked against a drill maker's chart. Today they're conservative starting values.
 
@@ -75,7 +76,8 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## Limits and next steps
 
-- **v1 scope:** round holes along Z, opening on top, one setup, metric, Fanuc-style. Tapping, reaming, pockets, chamfers and multiple setups are out of scope.
+- **v1 scope:** round holes drilled from one side of the part, in one setup, Fanuc-style. The part is turned to whichever of its six sides has the most holes to drill. Tapping, reaming, counterbores with flat floors, pockets, chamfers and multiple setups are out of scope.
+- **Tool reach** isn't checked: a hole deep inside a box needs a tool and holder long enough to reach it without hitting the walls.
 - **Safety checks:** the rapid check looks at each move's start and end points, not the full path, and only knows the surface height at hole centers. "Too deep" is measured against the bottom of the part, not each blind hole's depth.
 - **Next:** tapping (G84), a post-processor per machine, a rules-only planner to compare against Claude's plans, and a record of operator feedback on each job.
 
@@ -115,8 +117,9 @@ On Intel Macs, a few CadQuery dependencies are pinned to their last releases wit
 | `src/hole_cam/api.py` | HTTP API and static web page |
 | `web/` | React and three.js front end |
 | `data/` | Tool library, materials, machine limits |
-| `fixtures/` | Test parts, plans, reference program, bad G-code set |
+| `fixtures/` | Test parts (generated and from NIST), plans, reference program, bad G-code set |
 | `docs/HOW-IT-WORKS.md` | What each stage does and why |
+| `docs/REAL-PARTS.md` | Results on 11 real NIST parts, and what they broke |
 | `docs/AI-IN-HOLE-CAM.md` | How Claude is used: prompt, schema, safeguards, measured cost |
 | `docs/MANUFACTURING-PRIMER.md` | Machining terms explained for non-machinists |
 | `SPEC.md` | The original weekend spec |

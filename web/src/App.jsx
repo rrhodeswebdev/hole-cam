@@ -154,7 +154,12 @@ function Results({ job, onDownload, activeLine, change }) {
             ))}
           </tbody>
         </table>
-        {skipped.map((s, i) => <p key={i} className="muted small">Skipped Ø{fmt(s.diameter)}: {s.reason}</p>)}
+        {job.part.setup && job.part.setup !== '+Z' && (
+          <p className="note small">Turned so the model's {job.part.setup} side faces up: that side has the most holes to drill.</p>
+        )}
+        {Object.entries(Object.groupBy(skipped, (s) => `Ø${fmt(s.diameter)}: ${s.reason}`)).map(([k, list]) => (
+          <p key={k} className="muted small">Skipped {list.length > 1 && `${list.length}× `}{k}</p>
+        ))}
       </section>
 
       {plan && (

@@ -14,7 +14,7 @@
   "skipped": [
     {
       "diameter": 6,
-      "reason": "not vertical"
+      "reason": "on another side (needs another setup)"
     },
     {
       "diameter": 4,

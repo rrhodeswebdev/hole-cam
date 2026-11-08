@@ -77,7 +77,7 @@ The people involved:
 
 **Absolute and incremental coordinates** (**G90 / G91**): in absolute mode, a position is measured from the zero point. In incremental mode, it's measured from where the tool is now.
 
-**In Hole-CAM:** X0 Y0 is the part's front-left corner and Z0 is the highest point of the part, so everything inside the part has a negative Z. It's one setup from the top only, which is why holes on the sides or underneath are *skipped*. The safety checks verify that the tool length offset is on and matches the loaded tool.
+**In Hole-CAM:** X0 Y0 is the part's front-left corner and Z0 is the highest point of the part, so everything inside the part has a negative Z. It's one setup only: the part is turned so the side with the most holes to drill faces up, and holes on the other sides are *skipped*. The safety checks verify that the tool length offset is on and matches the loaded tool.
 
 ---
 

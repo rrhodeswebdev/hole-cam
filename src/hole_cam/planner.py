@@ -16,7 +16,7 @@ import anthropic
 from hole_cam.gcode import _load, _tip_depth
 
 MODEL = "claude-opus-5-5"
-DIAMETER_TOL = 0.05  # mm
+DIAMETER_TOL = 0.02  # mm: same nominal size, allowing for inch-to-mm rounding; a 9/32" drill is not a 7.1 mm one
 
 SYSTEM = """You are a CNC programmer planning hole-making on a 3-axis vertical mill. One setup, parts are drilled from the top.
 
@@ -31,7 +31,7 @@ Speeds and feeds are calculated elsewhere; do not include them."""
 REVISE = """
 
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than {peck_ratio} x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 summary: one or two sentences to the machinist saying what you changed, or why you couldn't."""
@@ -121,7 +121,7 @@ def validate(plan, found, tools, machine):
     holes = {h["id"]: h for h in found["holes"]}
     lib = {t["id"]: t for t in tools}
     errors = []
-    spotted, drilled = set(), {}
+    spotted, drilled = {}, {}  # hole id -> operation number
 
     for n, op in enumerate(plan["operations"], 1):
         tool = lib.get(op["tool_id"])
@@ -141,7 +141,7 @@ def validate(plan, found, tools, machine):
                 spot_d = 2 * op["depth"] * math.tan(math.radians(tool["point_angle"] / 2))
                 if op["depth"] <= 0 or spot_d > h["diameter"] + 1:
                     errors.append(f"{where}: spot depth {op['depth']} mm gives a {spot_d:.1f} mm spot on a {h['diameter']} mm hole")
-                spotted.add(hid)
+                spotted.setdefault(hid, n)
                 continue
             if hid in drilled:
                 errors.append(f"{where}: hole {hid} is already drilled in operation {drilled[hid]}")
@@ -158,9 +158,25 @@ def validate(plan, found, tools, machine):
         if op["op"] == "drill" and op["cycle"] == "G83" and op["peck"] <= 0:
             errors.append(f"{where}: G83 needs a peck depth above 0")
 
+    # A hole that starts at the floor of a wider one (e.g. under a counterbore) has its R plane below the surface
+    # when the wider one is deeper than the R clearance: until the wider hole is cut, that rapid ends in solid metal.
+    # The G-code checker only knows one surface height per hole center, so it can't see this; check it here.
+    above = {b["id"]: a["id"] for a in holes.values() for b in holes.values()
+             if abs(a["x"] - b["x"]) < 1e-3 and abs(a["y"] - b["y"]) < 1e-3 and a["diameter"] > b["diameter"]
+             and abs(b["top_z"] - (a["top_z"] - a["depth"])) < 0.01}
+    for b, a in above.items():
+        first = min((spotted.get(b, math.inf), drilled.get(b, math.inf)))
+        if (holes[a]["depth"] > machine["r_clearance"] + 1e-3 and first < math.inf
+                and drilled.get(a, math.inf) > first):
+            errors.append(f"hole {b} starts {holes[a]['depth']:g} mm down, at the floor of hole {a}: drill hole {a} "
+                          f"before hole {b} is spotted or drilled, or the rapid to its R plane ends inside the part")
+
     drills = [t for t in tools if t["type"] == "drill"]
+    has_drill = lambda h: any(abs(t["diameter"] - h["diameter"]) <= DIAMETER_TOL for t in drills)
     for hid, h in holes.items():
-        if hid not in drilled and any(abs(t["diameter"] - h["diameter"]) <= DIAMETER_TOL for t in drills):
+        if hid in above and not has_drill(holes[above[hid]]):
+            continue  # can't be reached until the wider hole above it is made some other way
+        if hid not in drilled and has_drill(h):
             errors.append(f"hole {hid} ({h['diameter']} mm) is not drilled, but the library has a drill for it")
     return {"errors": errors}
 

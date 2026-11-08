@@ -166,7 +166,7 @@ flowchart LR
 | Malformed reply, missing fields, made-up fields | The schema: the API won't return them |
 | A drill that doesn't exist | The schema: tool IDs are limited to the library |
 | A refusal or a reply cut off at the token limit | The stop reason check: raises an error, so no partial plan is used |
-| Wrong drill size for a hole | Validation, within 0.05 mm |
+| Wrong drill size for a hole | Validation, within 0.02 mm |
 | A hole drilled before it's spotted, drilled twice, or forgotten | Validation |
 | No peck drilling on a deep hole, or a peck depth of 0 | Validation |
 | A drill too short for the hole | Validation, against the tool's flute length |
@@ -195,8 +195,14 @@ Live runs on 6061 aluminum, measured on 2026-11-07:
 | Mixed plate (4 holes) | 11.3 s | 2,710 | 1,171 | $0.034 | 1, valid |
 | Mixed plate, after the coordinate fix | 8.0 s | 2,710 | 847 | $0.028 | 1, valid |
 | Odd-size plate (2 holes) | 5.9 s | 2,560 | 544 | $0.021 | 1, valid |
+| NIST FTC-07 (16 holes, counterbores) | 38.6 s | 6,814 | 3,796 | $0.103 | 1, valid |
+| NIST FTC-08 (20 holes) | 14.9 s | 6,715 | 1,572 | $0.058 | 1, valid |
+| NIST FTC-09 (29 holes) | 21.7 s | 7,390 | 2,235 | $0.074 | 1, valid |
+| NIST FTC-10 (28 holes) | 55.7 s | 19,597 | 5,776 | $0.194 | 2, valid on the retry |
 
-Costs are estimated from the token counts at Opus 5.5 list prices ($4 per million input tokens, $20 per million output). Output tokens include the model's reasoning. Every live plan so far has passed validation on the first attempt, so the retry path has only been exercised in tests.
+Costs are estimated from the token counts at Opus 5.5 list prices ($4 per million input tokens, $20 per million output). Output tokens include the model's reasoning. FTC-10 is the only live plan so far that failed validation; the retry with the errors listed fixed it.
+
+The NIST runs came after the tool library grew from 12 to 36 drills, which is why input is about 7,000 tokens instead of 2,700: the whole library goes into every prompt. What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
 
 ---
 
@@ -209,7 +215,7 @@ Costs are estimated from the token counts at Opus 5.5 list prices ($4 per millio
 
 ```text
 Revising a plan: you also get the current plan and a change the machinist asked for. Make that change and keep the rest of the plan as it is.
-These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled.
+These rules are checked by code after you answer, so keep them even if asked not to: every drilled hole is spotted first; each drill matches its hole's diameter; tools come from the library; a hole deeper than 3.0 x its diameter uses G83 with a peck above 0; the drill's flutes reach the full depth; every hole the library has a drill for is drilled; a hole that starts at the floor of a wider hole deeper than the R clearance (under a counterbore) is spotted and drilled after the wider one.
 Everything else above is a default the machinist may override: peck size, pecking shallow holes too, spot depth, the order of operations and holes, and how operations are grouped. Do what they ask there.
 If the request conflicts with a checked rule, keep the rule, get as close to the request as the rules allow, and say so in summary.
 ```
@@ -230,14 +236,16 @@ Token counts weren't recorded for these runs. The prompt is the first plan's pro
 
 ## What the live runs taught us
 
-Running against the real model found three problems the fake-client tests couldn't:
+Running against the real model found four problems the fake-client tests couldn't:
 
 1. **Contradictory input caused a false warning.** Hole heights were sent in CAD coordinates while the machine settings said Z0 is the top of the part. Claude flagged it. The fix was to send hole heights in program coordinates. A test now checks this, and the warning is gone.
 2. **Claude's plans exposed a G-code inefficiency.** Claude split the spot drill into two operations with different depths, and the 5 mm drill into G81 and G83 operations. Both splits are correct, but the generator did a full tool change and trip home between operations using the same tool. The generator now keeps the tool loaded.
 
 3. **Claude treated defaults as rules.** In the first version of the revision prompt, "peck every hole, 2 mm at a time" was refused: Claude read the planning guidance ("peck about 1× the diameter", "use G83 past 3×D") as hard rules. The validator doesn't enforce either. The prompt now lists exactly what the code checks and names the rest as overridable defaults, and the same request is applied.
 
-All three are good examples of why a live model run belongs in testing, not just mocks.
+4. **Claude's correct plan exposed a gap in the checks.** On NIST FTC-07, Claude cut each counterbore before the hole beneath it, because the smaller hole's R plane is otherwise inside solid metal. The order was right, but nothing in the code required it: a program in the wrong order passed all six safety checks. The validator now enforces it ([REAL-PARTS.md](REAL-PARTS.md#a-gap-in-the-safety-net)).
+
+All four are good examples of why a live model run belongs in testing, not just mocks.
 
 ---
 

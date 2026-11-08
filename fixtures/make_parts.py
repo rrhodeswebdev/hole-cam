@@ -81,7 +81,7 @@ def side_hole():
     side = cq.Solid.makeCylinder(3, 16, V(61, 20, 15), V(-1, 0, 0))
     bottom = cq.Solid.makeCylinder(2, 7, V(40, 20, -1))
     body = cut(block(60, 40, 30), through(20, 20, 5, 30), side, bottom)
-    skipped = [{"diameter": 6, "reason": "not vertical"}, {"diameter": 4, "reason": "opens on the bottom"}]
+    skipped = [{"diameter": 6, "reason": "on another side (needs another setup)"}, {"diameter": 4, "reason": "opens on the bottom"}]
     return body, [h(20, 20, 5, 30, True, 30)], skipped
 
 

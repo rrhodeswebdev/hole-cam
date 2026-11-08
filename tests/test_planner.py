@@ -126,3 +126,36 @@ def test_revision_that_breaks_a_rule_is_retried_then_rejected():
     result = revise_plan(MIXED, MATERIALS["6061"], TOOLS, MACHINE, GOOD, "Skip spot drilling", client=client)
     assert len(client.calls) == 2 and any("before it is spotted" in e for e in result["errors"])
     assert result["summary"] == "Removed spot drilling." and "summary" not in result["plan"]
+
+
+def _counterbored():
+    # A 7/16" counterbore 7.62 mm deep over a 9/32" through hole, as on NIST FTC-07.
+    return {"part": {"top_z": 0, "bottom_z": -20}, "skipped": [], "holes": [
+        {"id": 1, "x": 10, "y": 10, "diameter": 11.1125, "depth": 7.62, "through": False, "top_z": 0},
+        {"id": 2, "x": 10, "y": 10, "diameter": 7.1438, "depth": 12.38, "through": True, "top_z": -7.62},
+    ]}
+
+
+def _ops(*ops):
+    return {"operations": [{"op": o, "tool_id": t, "hole_ids": [h], "depth": d, "cycle": "G81", "peck": 0, "reason": ""}
+                           for o, t, h, d in ops], "warnings": []}
+
+
+def test_hole_under_a_counterbore_must_wait_for_the_counterbore():
+    cbore_first = _ops(("spot_drill", "SPOT-90-10", 1, 4.5), ("drill", "DRL-7/16IN", 1, 0),
+                       ("spot_drill", "SPOT-90-10", 2, 3), ("drill", "DRL-9/32IN", 2, 0))
+    assert validate(cbore_first, _counterbored(), TOOLS, MACHINE)["errors"] == []
+    small_first = _ops(("spot_drill", "SPOT-90-10", 2, 3), ("drill", "DRL-9/32IN", 2, 0),
+                       ("spot_drill", "SPOT-90-10", 1, 4.5), ("drill", "DRL-7/16IN", 1, 0))
+    errors = validate(small_first, _counterbored(), TOOLS, MACHINE)["errors"]
+    assert len(errors) == 1 and "hole 2 starts 7.62 mm down, at the floor of hole 1" in errors[0]
+    # A counterbore no deeper than the R clearance leaves the R plane at or above the surface, so order is free.
+    shallow = _counterbored()
+    shallow["holes"][0]["depth"], shallow["holes"][1]["top_z"] = MACHINE["r_clearance"], -MACHINE["r_clearance"]
+    assert validate(small_first, shallow, TOOLS, MACHINE)["errors"] == []
+
+
+def test_hole_under_a_counterbore_with_no_drill_may_be_left_out():
+    found = _counterbored()
+    found["holes"][0]["diameter"] = 11.5  # no drill this size, so hole 1 needs an end mill and hole 2 can't be reached
+    assert validate(_ops(), found, TOOLS, MACHINE)["errors"] == []

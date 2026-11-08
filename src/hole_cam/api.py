@@ -8,13 +8,12 @@ import tempfile
 from pathlib import Path
 
 import anthropic
-import cadquery as cq
 from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from hole_cam.checks import check, context_for
 from hole_cam.gcode import _load, generate
-from hole_cam.holes import find_holes
+from hole_cam.holes import load_part
 from hole_cam.planner import plan_job, revise_plan
 
 MAX_UPLOAD = 20 * 1024 * 1024  # bytes
@@ -81,8 +80,8 @@ def _read_part(file, material):
         path = Path(tmp) / "upload.step"  # never use the client's file name as a path
         path.write_bytes(data)
         try:
-            found = find_holes(path)
-            mesh = _mesh(path, found["part"]["top_z"])
+            shape, found = load_part(path)
+            mesh = _mesh(shape, found["part"]["top_z"])
         except Exception:
             raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
     return found, mesh, name
@@ -124,8 +123,8 @@ if WEB.is_dir():  # built UI (cd web && npm run build); mounted last so the API 
     app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 
 
-def _mesh(path, top_z):
+def _mesh(shape, top_z):
     """Triangle mesh of the part in work coordinates (Z0 = top of the part), for three.js."""
-    verts, tris = cq.importers.importStep(str(path)).val().tessellate(0.1, 0.2)
+    verts, tris = shape.tessellate(0.1, 0.2)
     return {"vertices": [[round(v.x, 3), round(v.y, 3), round(v.z - top_z, 3)] for v in verts],
             "triangles": [list(t) for t in tris]}

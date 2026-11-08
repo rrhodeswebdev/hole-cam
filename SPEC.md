@@ -90,7 +90,7 @@ flowchart TD
 Reject the plan and show why if:
 - a tool ID isn't in the library,
 - a hole is missed, or a hole is drilled twice with the same operation,
-- the drill diameter doesn't match the hole diameter (±0.05 mm),
+- the drill diameter doesn't match the hole diameter (±0.02 mm),
 - the drill can't reach the depth (flute length too short),
 - a deep hole uses G81 instead of G83.
 
