@@ -4,8 +4,8 @@ Upload a STEP part and get back a checked drilling program. Claude plans the job
 
 It's a weekend-sized version of the "engineering model → machining strategy → G-code" problem: holes only, one setup, a 3-axis mill.
 
-![Hole-CAM showing a plate with four holes, the drilling plan and the 3D toolpath](docs/screenshot.png)
-<sub>A live run on the mixed test plate: the plan and its reasons are Claude's.</sub>
+![Hole-CAM mid-playback: a 6.8 mm drill peck drilling a plate, next to Claude's revised plan after the request "Peck every hole, 2 mm at a time", with the operations changed and the cycle time going from 0:34 to 0:39](docs/screenshot.png)
+<sub>A live run on the mixed test plate: the plan, its reasons and the revision summary are Claude's. The view is paused partway through the revised program.</sub>
 
 ## The user and the problem
 
