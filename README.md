@@ -4,8 +4,8 @@ Upload a STEP part and get back a checked drilling program. Claude plans the job
 
 It's a weekend-sized version of the "engineering model → machining strategy → G-code" problem: holes only, one setup, a 3-axis mill.
 
-![Hole-CAM on a real NIST part: the STEP file is uploaded and planned, the drills play through the program at 1× then 5×, then the request "Peck every hole, 2 mm at a time" is sent and Claude's revision appears with the operations changed and the cycle time going from 1:37 to 1:50](docs/demo.gif)
-<sub>NIST part FTC-07, an open box with counterbored holes on bosses inside. The plan, the warnings and the revision summary are Claude's, from a live run. The recording replays those answers, and the waits are cut short: live, the plan and the revision took about 75 s together.</sub>
+![Hole-CAM on a real NIST part: the STEP file and its PDF drawing are uploaded, Claude reads the drawing's hole callouts into a table marking the eight Ø.250 +.003 holes for reaming, the plan drills them 6.0 mm and reams them with a 1/4 inch reamer, and the playback shows the reamer feeding into and back out of each hole](docs/demo.gif)
+<sub>NIST part FTC-07, an open box with counterbored holes on bosses inside, and its 4-page drawing. The callouts read off the drawing and the plan are Claude's, from a live run; whether each hole needs reaming is decided by code. The recording replays that answer and skips ahead to the reaming: live, the plan took 63 s.</sub>
 
 ## The user and the problem
 
