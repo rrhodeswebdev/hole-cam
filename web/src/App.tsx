@@ -1,35 +1,41 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Viewer, { clock } from './Viewer.jsx'
-import { toolColor } from './colors.js'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import Viewer, { clock } from './Viewer.tsx'
+import { toolColor } from './colors.ts'
+import type { Callout, Job, Operation } from './types.ts'
 
-const fmt = (n) => Number(n.toFixed(3)).toString()
+type Busy = 'plan' | 'revise' | null
+type Planned = { file: File; drawing: File | null; material: string }
+type Revision = { request: string; summary: string } & ({ previous: Job } | { errors: string[] })
+
+const fmt = (n: number) => Number(n.toFixed(3)).toString()
 const EXAMPLES = ['Do the deep holes first', 'Peck every hole, 2 mm at a time', 'Spot drill 1 mm deep', 'Skip spot drilling to save time']
 
 // One line per operation, used for the plan list and to compare plans.
 const OP_NAMES = { spot_drill: 'Spot drill', drill: 'Drill', ream: 'Ream', tap: 'Tap' }
-const opLabel = (op, toolNumbers) => op.op === 'spot_drill'
+const opLabel = (op: Operation, toolNumbers: Record<string, number>) => op.op === 'spot_drill'
   ? `T${toolNumbers[op.tool_id]} Spot drill · ${fmt(op.depth)} mm deep · holes ${op.hole_ids.join(', ')}`
   : `T${toolNumbers[op.tool_id]} ${OP_NAMES[op.op]} · ${op.cycle}${op.cycle === 'G83' ? ` peck ${fmt(op.peck)}` : ''} · holes ${op.hole_ids.join(', ')}`
 // Plain loop rather than Object.groupBy, which older browsers (before Chrome 117 / Safari 17.4) lack.
-const countBy = (list, key) => list.reduce((acc, x) => { acc[key(x)] = (acc[key(x)] ?? 0) + 1; return acc }, {})
-const toolChanges = (job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
+const countBy = <T,>(list: T[], key: (x: T) => string) =>
+  list.reduce<Record<string, number>>((acc, x) => { acc[key(x)] = (acc[key(x)] ?? 0) + 1; return acc }, {})
+const toolChanges = (job: Job) => job.toolpath.filter((m) => m.kind === 'tool_change').length
 
-function errorText(detail, status) {
+function errorText(detail: unknown, status: number) {
   if (typeof detail === 'string') return detail
   return `The server rejected the request (HTTP ${status}).`
 }
 
 export default function App() {
-  const [materials, setMaterials] = useState({})
+  const [materials, setMaterials] = useState<Record<string, string>>({})
   const [material, setMaterial] = useState('6061')
-  const [file, setFile] = useState(null)
-  const [drawing, setDrawing] = useState(null) // optional PDF
-  const [job, setJob] = useState(null)
-  const [busy, setBusy] = useState(null) // null, 'plan' or 'revise'
-  const [error, setError] = useState(null)
-  const [activeLine, setActiveLine] = useState(null)
-  const [planned, setPlanned] = useState(null) // the file, drawing and material the current job came from
-  const [revision, setRevision] = useState(null) // { request, summary, previous } or { request, summary, errors }
+  const [file, setFile] = useState<File | null>(null)
+  const [drawing, setDrawing] = useState<File | null>(null) // optional PDF
+  const [job, setJob] = useState<Job | null>(null)
+  const [busy, setBusy] = useState<Busy>(null) // null, 'plan' or 'revise'
+  const [error, setError] = useState<string | null>(null)
+  const [activeLine, setActiveLine] = useState<number | null>(null)
+  const [planned, setPlanned] = useState<Planned | null>(null) // the file, drawing and material the current job came from
+  const [revision, setRevision] = useState<Revision | null>(null) // { request, summary, previous } or { request, summary, errors }
 
   useEffect(() => {
     fetch('/materials')
@@ -38,7 +44,7 @@ export default function App() {
       .catch(() => setError('Can’t reach the API. Start it with: uv run uvicorn hole_cam.api:app'))
   }, [])
 
-  async function submit(e) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (!file) return
     setBusy('plan')
@@ -57,13 +63,14 @@ export default function App() {
       setJob(data)
       setPlanned({ file, drawing, material })
     } catch (err) {
-      setError(err.message)
+      setError((err as Error).message)
     } finally {
       setBusy(null)
     }
   }
 
-  async function revise(request) {
+  async function revise(request: string) {
+    if (!planned || !job) return false
     setBusy('revise')
     setError(null)
     const body = new FormData()
@@ -86,7 +93,7 @@ export default function App() {
       }
       return true
     } catch (err) {
-      setError(err.message)
+      setError((err as Error).message)
       return false
     } finally {
       setBusy(null)
@@ -94,12 +101,14 @@ export default function App() {
   }
 
   function undo() {
+    if (!revision || !('previous' in revision)) return
     setJob(revision.previous)
     setActiveLine(null)
     setRevision(null)
   }
 
   function download() {
+    if (!job?.gcode || !planned) return
     const url = URL.createObjectURL(new Blob([job.gcode], { type: 'text/plain' }))
     const a = Object.assign(document.createElement('a'), { href: url, download: planned.file.name.replace(/\.(step|stp)$/i, '') + '.nc' })
     a.click()
@@ -117,11 +126,11 @@ export default function App() {
         <form onSubmit={submit} className="card">
           <label>
             Part (STEP)
-            <input type="file" accept=".step,.stp" onChange={(e) => setFile(e.target.files[0] ?? null)} />
+            <input type="file" accept=".step,.stp" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
           <label>
             Drawing (PDF, optional)
-            <input type="file" accept=".pdf,application/pdf" onChange={(e) => setDrawing(e.target.files[0] ?? null)} />
+            <input type="file" accept=".pdf,application/pdf" onChange={(e) => setDrawing(e.target.files?.[0] ?? null)} />
           </label>
           <label>
             Material
@@ -129,7 +138,7 @@ export default function App() {
               {Object.entries(materials).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           </label>
-          <button type="submit" disabled={!file || busy}>{busy === 'plan' ? 'Planning…' : 'Plan the job'}</button>
+          <button type="submit" disabled={!file || !!busy}>{busy === 'plan' ? 'Planning…' : 'Plan the job'}</button>
           <p className="muted small">{busy === 'plan' && `Finding holes and asking Claude for a plan${drawing ? ' from the drawing' : ''}. This can take a minute.`}</p>
         </form>
 
@@ -151,7 +160,7 @@ export default function App() {
   )
 }
 
-function Results({ job, onDownload, activeLine, change }) {
+function Results({ job, onDownload, activeLine, change }: { job: Job; onDownload: () => void; activeLine: number | null; change: ReactNode }) {
   const { holes, skipped, plan, plan_errors, gcode, findings, export_ok, tool_numbers, cycle_seconds } = job
   const changes = toolChanges(job)
   return (
@@ -213,7 +222,7 @@ function Results({ job, onDownload, activeLine, change }) {
           {findings.length === 0
             ? <p className="ok">All 6 checks passed.</p>
             : <ul className="findings">{findings.map((f, i) => <li key={i} className="small"><strong>Line {f.line}</strong> {f.message}</li>)}</ul>}
-          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds)}</strong> · {changes} tool change{changes === 1 ? '' : 's'}</p>
+          <p className="small">Estimated cycle time <strong>{clock(cycle_seconds ?? 0)}</strong> · {changes} tool change{changes === 1 ? '' : 's'}</p>
           <button onClick={onDownload} disabled={!export_ok}>Download .nc</button>
           {!export_ok && <p className="muted small">Download is blocked until every check passes.</p>}
           <details>
@@ -227,12 +236,12 @@ function Results({ job, onDownload, activeLine, change }) {
 }
 
 // The program with the line the simulation is on highlighted and kept in view.
-function Program({ gcode, activeLine }) {
-  const pre = useRef(null)
+function Program({ gcode, activeLine }: { gcode: string; activeLine: number | null }) {
+  const pre = useRef<HTMLPreElement>(null)
   const lines = useMemo(() => gcode.split('\n'), [gcode])
   useEffect(() => {
-    const el = pre.current?.querySelector('.active')
-    if (el) pre.current.scrollTop = el.offsetTop - pre.current.clientHeight / 2
+    const el = pre.current?.querySelector<HTMLElement>('.active')
+    if (el && pre.current) pre.current.scrollTop = el.offsetTop - pre.current.clientHeight / 2
   }, [activeLine])
   return (
     <pre ref={pre}>
@@ -244,9 +253,11 @@ function Program({ gcode, activeLine }) {
 }
 
 // Ask Claude to change the plan in plain English, and show what changed.
-function ChangePlan({ job, busy, revision, onRevise, onUndo }) {
+function ChangePlan({ job, busy, revision, onRevise, onUndo }: {
+  job: Job; busy: Busy; revision: Revision | null; onRevise: (request: string) => Promise<boolean>; onUndo: () => void
+}) {
   const [request, setRequest] = useState('')
-  async function submit(e) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     if (await onRevise(request.trim())) setRequest('')
   }
@@ -257,36 +268,37 @@ function ChangePlan({ job, busy, revision, onRevise, onUndo }) {
         <label className="sr-only" htmlFor="change-request">What should change?</label>
         <textarea id="change-request" rows={2} maxLength={500} value={request} placeholder="e.g. Do the deep holes first"
           onChange={(e) => setRequest(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form.requestSubmit() } }} />
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }} />
         <div className="examples">
-          {EXAMPLES.map((x) => <button key={x} type="button" className="chip" onClick={() => setRequest(x)} disabled={busy}>{x}</button>)}
+          {EXAMPLES.map((x) => <button key={x} type="button" className="chip" onClick={() => setRequest(x)} disabled={!!busy}>{x}</button>)}
         </div>
-        <button type="submit" disabled={busy || !request.trim()}>{busy === 'revise' ? 'Revising…' : 'Revise with Claude'}</button>
+        <button type="submit" disabled={!!busy || !request.trim()}>{busy === 'revise' ? 'Revising…' : 'Revise with Claude'}</button>
       </form>
       {revision && <RevisionResult job={job} revision={revision} onUndo={onUndo} />}
     </section>
   )
 }
 
-function RevisionResult({ job, revision, onUndo }) {
-  const { request, summary, previous, errors } = revision
-  if (errors) {
+function RevisionResult({ job, revision, onUndo }: { job: Job; revision: Revision; onUndo: () => void }) {
+  const { request, summary } = revision
+  if ('errors' in revision) {
     return (
       <div className="revision" role="alert">
         <p className="small muted">You asked: “{request}”</p>
         <p><strong>Claude:</strong> {summary}</p>
         <p className="bad small"><strong>Rejected by the validator</strong>, so your plan is unchanged:</p>
-        <ul>{errors.map((e, i) => <li key={i} className="small">{e}</li>)}</ul>
+        <ul>{revision.errors.map((e, i) => <li key={i} className="small">{e}</li>)}</ul>
       </div>
     )
   }
-  const before = previous.plan.operations.map((op) => opLabel(op, previous.tool_numbers))
-  const after = job.plan.operations.map((op) => opLabel(op, job.tool_numbers))
+  const { previous } = revision
+  const before = (previous.plan?.operations ?? []).map((op) => opLabel(op, previous.tool_numbers))
+  const after = (job.plan?.operations ?? []).map((op) => opLabel(op, job.tool_numbers))
   const removed = before.filter((l) => !after.includes(l))
   const added = after.filter((l) => !before.includes(l))
   const reordered = !removed.length && !added.length && before.join() !== after.join()
   const hadProgram = Boolean(previous.gcode)
-  const dt = job.cycle_seconds - previous.cycle_seconds
+  const dt = (job.cycle_seconds ?? 0) - (previous.cycle_seconds ?? 0)
   return (
     <div className="revision" aria-live="polite">
       <p className="small muted">You asked: “{request}”</p>
@@ -301,7 +313,7 @@ function RevisionResult({ job, revision, onUndo }) {
       {!removed.length && !added.length && !reordered && <p className="small">No change to the operations.</p>}
       <p className="small">
         {/* A rejected plan has no program, so there's no cycle time or tool changes to compare against. */}
-        Cycle time {hadProgram && <>{clock(previous.cycle_seconds)} → </>}<strong>{clock(job.cycle_seconds)}</strong>
+        Cycle time {hadProgram && <>{clock(previous.cycle_seconds ?? 0)} → </>}<strong>{clock(job.cycle_seconds ?? 0)}</strong>
         {hadProgram && Math.abs(dt) >= 0.5 && <span className={dt < 0 ? 'ok-text' : 'bad'}> ({dt < 0 ? '−' : '+'}{Math.round(Math.abs(dt))} s)</span>}
         {' · '}tool changes {hadProgram && `${toolChanges(previous)} → `}{toolChanges(job)}
         {' · '}{job.findings.length ? <span className="bad">safety checks failed</span> : <span className="ok-text">checks pass</span>}
@@ -312,8 +324,8 @@ function RevisionResult({ job, revision, onUndo }) {
 }
 
 // What Claude read off the drawing, and what the tolerance or thread needs: the Drill/Ream/Tap call is made by code, not Claude.
-function FromDrawing({ callouts, oversize }) {
-  const dev = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v))
+function FromDrawing({ callouts, oversize }: { callouts: Callout[]; oversize: number }) {
+  const dev = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v))
   return (
     <section className="card">
       <h2>From the drawing <span className="muted">read by Claude</span></h2>
@@ -339,7 +351,7 @@ function FromDrawing({ callouts, oversize }) {
 }
 
 // Over the 3D area while Claude works: what's happening and how long it's taken.
-function Working({ what, drawing }) {
+function Working({ what, drawing }: { what: 'plan' | 'revise'; drawing?: File | null }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     const start = Date.now()
