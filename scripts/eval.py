@@ -123,7 +123,8 @@ def score_run(case, found, result, calls, truth=None, reference=None):
            "fallback": any(c["fallback"] for c in calls)}
     if "exception" in result:
         return {**rec, "valid_first": False, "valid": False, "safe": False, "errors": [result["exception"]],
-                "ops": None, "matches_reference": None, "callouts": None, "warnings": [], "plan": None}
+                "ops": None, "matches_reference": None, "warnings": [], "plan": None,
+                "callouts": score_drawing({}, truth) if truth is not None else None}  # a failed run found nothing
     plan, errors = result["plan"], result["errors"]
     safe = False
     if not errors:
@@ -232,7 +233,7 @@ def main(argv=None):
     if a.estimate:
         return
     RESULTS.mkdir(parents=True, exist_ok=True)
-    out = RESULTS / f"{datetime.now():%Y-%m-%dT%H%M}.jsonl"
+    out = RESULTS / f"{datetime.now():%Y-%m-%dT%H%M%S}.jsonl"
     records = sweep(settings, cases, a.runs, a.max_cost, out)
     print(f"results: {out}", file=sys.stderr)
     print(scorecard(records, a.by_case))

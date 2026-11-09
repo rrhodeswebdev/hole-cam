@@ -99,7 +99,7 @@ uv run --env-file .env python scripts/eval.py                                   
 uv run --env-file .env python scripts/eval.py --settings opus-5-5/medium,sonnet-5-5/medium --runs 5
 uv run --env-file .env python scripts/eval.py --cases ftc07,ftc10 --by-case
 uv run python scripts/eval.py --estimate                                          # cost estimate only, no API calls
-uv run python scripts/eval.py --summarize evals/results/2026-11-08T1400.jsonl     # reprint a scorecard from saved results
+uv run python scripts/eval.py --summarize evals/results/2026-11-08T140000.jsonl    # reprint a scorecard from saved results
 uv run pytest                                                                     # includes the scoring tests
 ```
 

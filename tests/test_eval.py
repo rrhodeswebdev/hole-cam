@@ -141,6 +141,11 @@ def test_a_failed_request_is_recorded_not_raised(mixed):
 
     rec = ev.run_one("mixed", mixed, ev.RecordingClient("claude-opus-5-5", "medium", inner=Refuses(PLAN)))
     assert not rec["valid"] and "planner stopped early" in rec["errors"][0]
+    # on a drawing case, a failed run counts as finding nothing, so it pulls "Callouts found" down
+    rec = ev.run_one("mixed", {**mixed, "truth": TRUTH},
+                     ev.RecordingClient("claude-opus-5-5", "medium", inner=Refuses(PLAN)))
+    assert rec["callouts"] == {"found": 0, "wanted": 8, "extra": 0}
+    assert "| 0% | 0.0 |" in ev.scorecard([{**rec, "setting": "opus-5-5/medium", "run": 1}])
 
 
 def test_the_sweep_stops_at_the_cost_limit(mixed, tmp_path):
