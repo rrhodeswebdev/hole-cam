@@ -106,7 +106,7 @@ def offered_tools(found, tools):
     """The tools worth showing Claude: spot drills, each drill or reamer that fits a hole, the pre-drills for
     those reamers, each tap that fits a hole with its tap drill, and for a hole no drill fits, the nearest drill
     on either side so Claude can say what's close.
-    Validation still uses the whole library; this only keeps the prompt short (58 tools would triple its size)."""
+    Validation still uses the whole library; this only keeps the prompt short (58 tools would about double it)."""
     drills = sorted((t for t in tools if t["type"] == "drill"), key=lambda t: t["diameter"])
     keep = {t["id"] for t in tools if t["type"] == "spot_drill"}
     for h in found["holes"]:

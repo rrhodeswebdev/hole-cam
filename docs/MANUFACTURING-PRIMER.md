@@ -134,7 +134,7 @@ The people involved:
 | **Peck drilling** | Drilling in short steps, pulling the drill out between them so chips can escape. Without it, chips pack into the flutes of a deep hole, heat builds up and the drill can snap. A common rule is to peck past 3×D. |
 | **Cycle time** | How long the machine takes to make one part. Tool changes, trips home and air moves all add to it. |
 
-**Worked example:** 6061 aluminum allows about 75 m/min with a cobalt drill. For a 10 mm tool, that's 75 × 1000 / (π × 10) = 2387 rpm. At 0.05 mm per revolution, the feed rate is 2387 × 0.05 = 119 mm/min.
+**Worked example:** 6061 aluminum allows about 75 m/min with a cobalt tool. For the 10 mm spot drill, that's 75 × 1000 / (π × 10) = 2387 rpm. At the table's spot-drill feed of 0.05 mm per revolution, the feed rate is 2387 × 0.05 = 119 mm/min. Those are the `S2387` and `F119.` on the spot drill's lines in the test plate's program.
 
 ### Materials in the app
 
@@ -169,8 +169,10 @@ Most codes are **modal**: once set, they stay in effect until something changes 
 | Code | Meaning |
 |---|---|
 | `G00` | **Rapid:** move at full speed, through air only |
-| `G01` | **Feed:** move at the programmed cutting speed |
+| `G01` | **Feed:** move at the programmed cutting speed. Hole-CAM's programs cut only inside drilling cycles, but the safety checks read `G01` in programs from elsewhere. |
 | `G21` | Units are millimetres |
+| `G17` | Work in the XY plane |
+| `G40` | Cancel cutter radius compensation (cleared at the start, never used) |
 | `G90` / `G91` | Absolute or incremental coordinates |
 | `G54` | Use work offset 1 (the part's zero point) |
 | `G43 H_` | Turn on the tool length offset |
@@ -190,7 +192,7 @@ Most codes are **modal**: once set, they stay in effect until something changes 
 
 ### What a drilling cycle does
 
-One cycle line (`G81` or `G83`) drills a hole, and each following line with just X and Y drills another hole the same way. The **R plane** is a height just above the surface where the tool stops rapid-moving and starts cutting.
+One cycle line (`G81` or `G83`) drills a hole, and each following line with a new X and Y drills another hole the same way. Hole-CAM also repeats Z and R on those lines, which changes nothing and makes each line readable on its own. The **R plane** is a height just above the surface where the tool stops rapid-moving and starts cutting.
 
 ```mermaid
 flowchart TD

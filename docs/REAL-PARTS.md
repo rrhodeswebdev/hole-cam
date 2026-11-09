@@ -43,6 +43,8 @@ The validator now enforces the order, since the plan is where order is known. It
 
 ## Hole finding on all 11 parts
 
+FTC-07, FTC-08 and FTC-10 are in `fixtures/nist/`, and FTC-07 and FTC-08 are regression tests. The other eight are on NIST's page linked above.
+
 | Part | Setup side | Holes found | Drillable with the library | No drill in the library for |
 |---|---|---|---|---|
 | CTC-01 | +Z | 8 | 0 | Ø25, Ø35 mm (bores) |
@@ -57,7 +59,7 @@ The validator now enforces the order, since the plan is where order is known. It
 | FTC-10 | +Y | 28 | 16 | Ø2.46 (M3 threads, see below), Ø3.5 mm |
 | FTC-11 | +Z | 1 | 0 | Ø32 mm |
 
-FTC-08's Ø.228" holes gained a drill when the 5.8 mm reaming pre-drill was added; the live runs below were made before that.
+FTC-08's Ø.228" holes gained a drill when the 5.8 mm reaming pre-drill was added; the first live runs below were made before that, and the FTC-08 drawing run after.
 
 I checked four parts against their drawings: CTC-01, FTC-07, FTC-08 and FTC-10. All four matched exactly. The rest weren't checked hole by hole.
 
@@ -67,14 +69,7 @@ Holes with no matching drill aren't errors. Claude names them in the plan's warn
 
 ## Claude on real parts
 
-I ran the full pipeline live on the four parts the library can mostly drill: plan, validate, G-code, safety checks and cycle time. All four programs passed all six safety checks.
-
-| Part | Time | Tokens in / out | Cost | Holes drilled | Cycle time |
-|---|---|---|---|---|---|
-| FTC-07 | 39 s | 6,814 / 3,796 | $0.10 | 16 of 16 | 1:58 |
-| FTC-08 | 15 s | 6,715 / 1,572 | $0.06 | 12 of 20 | 0:57 |
-| FTC-09 | 22 s | 7,390 / 2,235 | $0.07 | 22 of 29 | 1:34 |
-| FTC-10 | 56 s (2 attempts) | 19,597 / 5,776 | $0.19 | 16 of 28 | 1:17 |
+I ran the full pipeline live on the four parts the library can mostly drill (FTC-07, 08, 09 and 10): plan, validate, G-code, safety checks and cycle time. All four programs passed all six safety checks. These were single runs; repeated runs, with cost, time and how often a plan passes first time, are in the eval ([AI-IN-HOLE-CAM.md](AI-IN-HOLE-CAM.md#how-well-it-works)).
 
 What Claude got right without being told:
 - **FTC-07:** recognized the counterbores from the coaxial holes. It cut them before the holes beneath, and warned that a drill leaves a cone-shaped floor where a screw head needs a flat seat.
@@ -82,9 +77,7 @@ What Claude got right without being told:
 - **FTC-09:** the plate is 3 mm thick, so it made the spot holes shallower to keep them from breaking through.
 - **FTC-10:** it read the 2.46 mm holes as M3 threads modeled at their inner diameter, and named the 2.5 mm tap drill they'd need.
 
-FTC-10 was the first live plan rejected by validation. The corrected plan passed on the retry. I didn't record which rule the first attempt broke.
-
-The runs above sent Claude the whole 36-drill library, so input grew from about 2,700 tokens to 6,700–7,700 per plan. Claude now gets only the spot drills, the drills that fit a hole, and the nearest drill on each side of any hole no drill fits. Validation still checks against the whole library. FTC-07 then took 3,303 input tokens instead of 6,814, at $0.08, passing on the first attempt. The demo plate dropped to 1,893.
+These runs sent Claude the whole tool library. It now gets only the tools that matter for the part, which roughly halved the prompt ([AI-IN-HOLE-CAM.md](AI-IN-HOLE-CAM.md#the-job)).
 
 ### Claude was right, the validator was wrong
 
@@ -108,13 +101,15 @@ I read the drawings myself first, so there was an answer to check against:
 | | 3 × Ø3.5 G6, one callout each | **Ream** (G6 is +0.012/+0.004), but the library has no 3.5 mm reamer |
 | | 8 × Ø2.5 ±0.15, 4 × Ø6 ±0.15, 3 × Ø3.5 ±0.2, 4 × ⌴Ø10 ±0.25 counterbores | Drill |
 
-**Live, on FTC-07** (one run, $0.17, 63 s): Claude returned all six callouts for the holes in this setup, with the right sizes and tolerances, including the counterbore symbol, and left out the four callouts for holes on the sides. Code marked the 8 Ø.250 holes for reaming. Claude's plan spots them, drills them 6.0 mm and reams them with the 1/4" reamer on `G85`. It passed validation on the first attempt, and the program passed all six safety checks.
+**Live, on FTC-07:** Claude returned all six callouts for the holes in this setup, with the right sizes and tolerances, including the counterbore symbol, and left out the four callouts for holes on the sides. Code marked the 8 Ø.250 holes for reaming. Claude's plan spots them, drills them 6.0 mm and reams them with the 1/4" reamer on `G85`. The program passed all six safety checks.
 
-**Live, on FTC-08** (2026-11-08, $0.12, 37 s): Claude returned nine callouts covering all 20 holes, every one +.005 −.001 except the Ø.250 pair at +.006, so code marked none for reaming. It drilled 14 holes, using the new 5.8 mm drill for the Ø.228" pair, and checked that 5.8 mm lands inside that tolerance. The other 6 holes it left out with the drill each would need. It passed validation first time and all six safety checks.
+**Live, on FTC-08:** Claude returned nine callouts covering all 20 holes, every one +.005 −.001 except the Ø.250 pair at +.006, so code marked none for reaming. It drilled 14 holes, using the new 5.8 mm drill for the Ø.228" pair, and checked that 5.8 mm lands inside that tolerance. The other 6 holes it left out with the drill each would need. The program passed all six safety checks.
 
-**Live, on FTC-10** (2026-11-08, $0.25, 95 s): the five-page drawing has its threads on page 4 only, as `2X M3x0.5-6g`. Claude read all 12 callouts for this setup and none for the side features, which matches the list above. It drilled the six M3 holes 2.5 mm, peck drilling because they're 12 mm deep, then tapped them on `G84`. Unprompted, it pointed out that "6g" is a class for external threads, and tapped them as standard internal M3. Code marked the three Ø3.5 G6 holes for reaming, and with no 3.5 mm reamer they were left out with a warning, as designed. First attempt valid; all six checks passed.
+**Live, on FTC-10:** the five-page drawing has its threads on page 4 only, as `2X M3x0.5-6g`. Claude read all 12 callouts for this setup and none for the side features, which matches the list above. It drilled the six M3 holes 2.5 mm, peck drilling because they're 12 mm deep, then tapped them on `G84`. Unprompted, it pointed out that "6g" is a class for external threads, and tapped them as standard internal M3. Code marked the three Ø3.5 G6 holes for reaming, and with no 3.5 mm reamer they were left out with a warning, as designed. The program passed all six safety checks.
 
 One thing it got wrong was a reason, not a result. It left out the Ø3.5 ±0.2 holes saying a #29 drill (3.454 mm) can't hold the tolerance, but 3.454 mm is inside 3.3–3.7 mm. The real reason is the code's rule that a drill must be within 0.02 mm of the model's hole.
+
+The eval repeats these three drawings 3 times on each model. Opus and Sonnet found every called-out hole in every run; Haiku missed some. On FTC-07 and FTC-08, Opus's first plan passed validation in only 1 of 3 runs, and every plan was valid after the retry ([AI-IN-HOLE-CAM.md](AI-IN-HOLE-CAM.md#how-well-it-works)).
 
 What isn't verified: which of identical callouts went to which holes, such as the four Ø.250 callouts on FTC-07 or the three Ø3.5 G6 callouts on FTC-10. Each set has the same tolerance, so the plan is the same either way, but on a part where they differed this would matter.
 
@@ -140,8 +135,8 @@ The first run failed every program, on a real portability bug: `G43 H1 Z25.` wit
 
 ## What's still not handled
 
-- **Counterbores** come out as two holes, one per diameter, and are drilled with a pointed drill. Claude warns about it, but a flat-bottom tool isn't modeled.
-- **Tool reach.** On FTC-07 the holes are on a boss 117 mm down inside the box. Nothing checks that the tool and holder are long enough, or clear the walls. Claude raised this on FTC-08; the code doesn't check it.
+- **Counterbores** come out as two holes, one per diameter, and are drilled with a pointed drill. Opus warns about it in every eval run (Sonnet and Haiku rarely do), but a flat-bottom tool isn't modeled.
+- **Tool reach.** On FTC-07 the holes are on a boss 117 mm down inside the box. Nothing checks that the tool and holder are long enough, or clear the walls. Claude raised this once on FTC-08; the code doesn't check it.
 - **Setups are limited to the six sides of the model's box.** Holes on angled faces are always skipped, and only one setup is planned.
 - **Big parts are slow to read.** Hole finding takes up to 16 seconds on CTC-02, because the setup search tries both faces along the main axis.
 - **A drill inside the drawing's tolerance but not the model's size** isn't allowed. On FTC-10, a #29 drill would make the Ø3.5 ±0.2 holes, but the validator wants a drill within 0.02 mm of the model, so they're left out. With a drawing, the rule could be "the drilled size lands inside the tolerance".
