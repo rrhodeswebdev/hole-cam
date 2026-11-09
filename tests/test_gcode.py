@@ -3,11 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from hole_cam.gcode import _f, _load, _lookup, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import _f, _lookup, generate
 from hole_cam.holes import find_holes
 
 FIX = Path(__file__).parent.parent / "fixtures"
-TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
+TOOLS, MATERIALS, MACHINE = load_data("tools.json"), load_data("materials.json"), load_data("machine.json")
 
 
 def test_mixed_part_matches_hand_checked_program():

@@ -20,7 +20,8 @@ import tempfile
 from pathlib import Path
 
 from hole_cam.checks import check, context_for
-from hole_cam.gcode import _load, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import generate
 from hole_cam.holes import find_holes
 
 HERE = Path(__file__).parent
@@ -120,8 +121,10 @@ def compare_cuts(found, plan, cut, tools):
             planned.setdefault((round(h["x"], 3), round(h["y"], 3)), set()).add(i)
     for xy in cut.keys() - planned.keys():
         problems.append(f"cuts at X{xy[0]:g} Y{xy[1]:g}, where the plan has no hole")
-    # A tapped hole is drilled at its tap's drill size, whatever size the model shows.
-    size = lambda i: lib[taps[i]["tap_drill"]]["diameter"] if i in taps else holes[i]["diameter"]
+    def size(i):
+        """The drilled size: a tapped hole is drilled at its tap's drill size, whatever size the model shows."""
+        return lib[taps[i]["tap_drill"]]["diameter"] if i in taps else holes[i]["diameter"]
+
     rows = []
     for xy, ids in sorted(planned.items()):
         made = [(t, z) for t, z in cut.get(xy, []) if t["type"] not in ("spot_drill", "tap")]
@@ -150,11 +153,11 @@ def compare_cuts(found, plan, cut, tools):
 
 
 def main(step, plan_path, material):
-    found, plan, tools = find_holes(step), json.loads(Path(plan_path).read_text()), _load("tools.json")
+    found, plan, tools = find_holes(step), json.loads(Path(plan_path).read_text()), load_data("tools.json")
     plan = plan.get("plan", plan)  # a saved live run keeps the plan under "plan"
-    program = generate(found, plan, tools, _load("materials.json")[material], _load("machine.json"), name=Path(step).stem)
+    program = generate(found, plan, tools, load_data("materials.json")[material], load_data("machine.json"), name=Path(step).stem)
     # LinuxCNC's G83 comes back down to 0.010" (0.254 mm) above the last peck, fixed; on a Fanuc it's a parameter.
-    machine = {**_load("machine.json"), "peck_clearance": 0.254}
+    machine = {**load_data("machine.json"), "peck_clearance": 0.254}
     trace = []
     findings = check(program, machine, **context_for(found), trace=trace)
     canon, errors = run_rs274(program, tools)

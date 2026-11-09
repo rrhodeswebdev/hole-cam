@@ -21,14 +21,15 @@ from types import SimpleNamespace
 import anthropic
 
 from hole_cam.checks import check, context_for
-from hole_cam.gcode import _load, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import generate
 from hole_cam.holes import find_holes
 from hole_cam.planner import drawing_callouts, plan_job
 
 ROOT = Path(__file__).resolve().parent.parent
 FIX = ROOT / "fixtures"
 RESULTS = ROOT / "evals" / "results"
-TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
+TOOLS, MATERIALS, MACHINE = load_data("tools.json"), load_data("materials.json"), load_data("machine.json")
 MATERIAL = MATERIALS["6061"]
 
 # $ per million tokens (input, output), first-party list prices.
@@ -222,7 +223,8 @@ def main(argv=None):
     p.add_argument("--summarize", metavar="JSONL", help="reprint the scorecard from saved results, no API calls")
     a = p.parse_args(argv)
     if a.summarize:
-        print(scorecard([json.loads(line) for line in open(a.summarize)], a.by_case))
+        lines = Path(a.summarize).read_text().splitlines()
+        print(scorecard([json.loads(line) for line in lines if line.strip()], a.by_case))
         return
     settings = [parse_setting(s) for s in a.settings.split(",")]
     cases = a.cases.split(",")

@@ -13,14 +13,15 @@ from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from hole_cam.checks import check, context_for
-from hole_cam.gcode import _load, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import generate
 from hole_cam.holes import load_part, mesh
 from hole_cam.planner import drawing_callouts, plan_job, revise_plan
 
 MAX_UPLOAD = 20 * 1024 * 1024  # bytes, for the part and for the drawing
 MAX_REQUEST = 500  # characters in a plan change request
 WEB = Path(__file__).parents[2] / "web" / "dist"
-TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
+TOOLS, MATERIALS, MACHINE = load_data("tools.json"), load_data("materials.json"), load_data("machine.json")
 TOOL_NUMBERS = {t["id"]: t["number"] for t in TOOLS}
 TOOL_INFO = {t["number"]: {k: t.get(k) for k in ("type", "diameter", "point_angle", "flute_length", "pitch")} for t in TOOLS}
 
@@ -41,8 +42,8 @@ def create_job(file: UploadFile, material: str = Form(), drawing: UploadFile | N
                client=Depends(anthropic_client)):
     # Sync on purpose: the CAD kernel and the Claude call block, so FastAPI runs this in a worker thread.
     pdf = _read_drawing(drawing)
-    found, mesh, name = _read_part(file, material)
-    job = _job(found, mesh)
+    found, part_mesh, name = _read_part(file, material)
+    job = _job(found, part_mesh)
     if not found["holes"]:
         job["plan_errors"] = ["No holes that can be drilled from the top were found."]
         return job
@@ -66,12 +67,12 @@ def revise_job(file: UploadFile, material: str = Form(), plan: str = Form(), req
     if not isinstance(current, dict) or not isinstance(current.get("operations"), list):
         raise HTTPException(422, "The current plan isn't valid. Plan the job again.")
     pdf = _read_drawing(drawing)
-    found, mesh, name = _read_part(file, material)
+    found, part_mesh, name = _read_part(file, material)
     if not found["holes"]:
         raise HTTPException(422, "No holes that can be drilled from the top were found.")
     result = _call_planner(revise_plan, found, MATERIALS[material], TOOLS, MACHINE, current, request, client=client,
                            drawing=pdf)
-    return {**_finish(_job(found, mesh), found, result, material, name), "summary": result["summary"]}
+    return {**_finish(_job(found, part_mesh), found, result, material, name), "summary": result["summary"]}
 
 
 def _read_part(file, material):
@@ -90,8 +91,8 @@ def _read_part(file, material):
         try:
             shape, found = load_part(path)
             part_mesh = mesh(shape, found["part"]["top_z"])
-        except Exception:
-            raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?")
+        except Exception as e:  # the CAD kernel raises many kinds of errors on a bad file
+            raise HTTPException(422, "Could not read that STEP file. Is it a single solid part?") from e
     return found, part_mesh, name
 
 
@@ -109,8 +110,8 @@ def _read_drawing(file):
     return data
 
 
-def _job(found, mesh):
-    return {**found, "mesh": mesh, "plan": None, "plan_errors": [],
+def _job(found, part_mesh):
+    return {**found, "mesh": part_mesh, "plan": None, "plan_errors": [],
             "gcode": None, "findings": [], "toolpath": [], "export_ok": False,
             "tool_numbers": TOOL_NUMBERS, "tool_info": TOOL_INFO,
             "cycle_seconds": None, "drawing": [], "drill_oversize": MACHINE["drill_oversize"]}
@@ -120,12 +121,12 @@ def _call_planner(fn, *args, client, drawing):
     try:
         return fn(*args, client=client, drawing=drawing)
     except (RuntimeError, anthropic.APIError) as e:
-        raise HTTPException(502, f"The planner failed: {e}")
+        raise HTTPException(502, f"The planner failed: {e}") from e
     except TypeError as e:
         # The SDK raises a bare TypeError when it finds no credentials; anything else is a real bug.
         if "authentication" not in str(e):
             raise
-        raise HTTPException(503, "Claude API credentials aren't set up on the server. Set ANTHROPIC_API_KEY.")
+        raise HTTPException(503, "Claude API credentials aren't set up on the server. Set ANTHROPIC_API_KEY.") from e
 
 
 def _finish(job, found, result, material, name):

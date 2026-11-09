@@ -3,137 +3,15 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { toolColor } from './colors.ts'
-import type { Hole, Job, Move, ToolInfo, ToolpathEvent, Vec3 } from './types.ts'
-
-type Timed = ToolpathEvent & { start: number; end: number }
+import { clock } from './format.ts'
+import { describeSteps, stateAt, timeline } from './playback.ts'
+import { toolModel } from './toolModel.ts'
+import type { Job, Move, Vec3 } from './types.ts'
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5]
 const DEFAULT_SPEED = 1 // real machine time
-const HELIX = (30 * Math.PI) / 180 // flute helix angle of a standard jobber drill
-const FLUTE_DEPTH = 0.72 // how far the flutes cut in, as a fraction of the radius
-const THREAD_DEPTH = 0.12 // a tap's thread depth, as a fraction of the radius
 const SPIN = 3 // spindle turns per second on screen (the real rpm would just flicker)
 const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-
-export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-
-// Give every move and tool change a start and end time, so any moment of the program can be looked up.
-function timeline(toolpath: ToolpathEvent[]): Timed[] {
-  let t = 0
-  return toolpath.map((e) => {
-    const start = t
-    t += e.seconds
-    return { ...e, start, end: t }
-  })
-}
-
-const TOOL_NAMES: Record<ToolInfo['type'], string> = { spot_drill: 'spot drill', drill: 'drill', reamer: 'reamer', tap: 'tap' }
-const toolName = (n: number, info: ToolInfo) => `T${n} · ${info?.diameter} mm ${TOOL_NAMES[info?.type] ?? 'tool'}`
-const VERBS: Record<ToolInfo['type'], string> = { spot_drill: 'Spot drilling', drill: 'Drilling', reamer: 'Reaming', tap: 'Tapping' }
-
-// A plain-words description of each move, e.g. "Drilling hole 4 · peck 2 of 5" or "Pulling out to clear chips".
-export function describeSteps(events: ToolpathEvent[], holes: Hole[], toolInfo: Record<number, ToolInfo>) {
-  const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) < 0.01 && Math.abs(a[1] - b[1]) < 0.01
-  const holeAt = (p: number[]) => holes.find((h) => near([h.x, h.y], p))
-  const key = (e: Move) => `${e.line} ${e.to[0]} ${e.to[1]}`
-  const feeds: Record<string, number> = {}
-  const down = (e: ToolpathEvent) => e.kind === 'feed' && e.to[2] < e.from[2] // reamers and taps also feed back out
-  for (const e of events) if (e.kind === 'feed' && down(e)) feeds[key(e)] = (feeds[key(e)] ?? 0) + 1
-  const done: Record<string, number> = {}
-  return events.map((e) => {
-    const tool = toolName(e.tool, toolInfo[e.tool])
-    if (e.kind === 'tool_change') return { what: `Tool change: ${tool}`, tool: 'Swapping tools in the spindle' }
-    const hole = holeAt(e.to)
-    const where = hole ? `hole ${hole.id}` : 'the next position'
-    const k = key(e)
-    if (e.kind === 'feed' && !down(e)) {
-      return { what: toolInfo[e.tool]?.type === 'tap' ? `Reversing out of ${where}` : `Feeding back out of ${where}`, tool }
-    }
-    if (e.kind === 'feed') {
-      done[k] = (done[k] ?? 0) + 1
-      const verb = VERBS[toolInfo[e.tool]?.type] ?? 'Drilling'
-      return { what: `${verb} ${where}${feeds[k] > 1 ? ` · peck ${done[k]} of ${feeds[k]}` : ''}`, tool }
-    }
-    if (!near(e.from, e.to)) return { what: `Moving to ${where}`, tool }
-    if (e.to[2] > e.from[2]) {
-      return { what: done[k] && done[k] < feeds[k] ? 'Pulling out to clear chips' : `Pulling out of ${where}`, tool }
-    }
-    return { what: done[k] ? 'Back down to keep drilling' : `Down to the start of ${where}`, tool }
-  })
-}
-
-// The event running at time t, and where the tool tip is (null during a tool change).
-function stateAt(events: Timed[], t: number) {
-  let i = events.findIndex((e) => e.end > t)
-  if (i === -1) i = events.length - 1
-  const e = events[i]
-  const k = e.seconds > 0 ? Math.min(1, Math.max(0, (t - e.start) / e.seconds)) : 1
-  const tip = e.kind === 'tool_change' ? null : e.from.map((v, j) => v + (e.to[j] - v) * k) as Vec3
-  return { i, e, tip }
-}
-
-// Fluted part of a cutting tool, tip at the origin pointing down: a fluted cross-section swept up a right-hand
-// helix, shrinking over the first tipLength mm (to a point for a drill, to a short chamfer for a reamer or tap).
-// A drill has 2 flutes on a helix; a reamer has 6 straight ones; a tap has 4 straight ones and a thread of the given pitch.
-function fluteGeometry(r: number, tipLength: number, fluteLength: number,
-  { flutes = 2, helix = HELIX, tipScale = 0, pitch = 0 }: { flutes?: number; helix?: number; tipScale?: number; pitch?: number } = {}) {
-  const around = 48
-  const lead = helix ? (2 * Math.PI * r) / Math.tan(helix) : Infinity
-  const zs = Array.from({ length: 8 }, (_, i) => (tipLength * i) / 8)
-  for (let z = tipLength; z < fluteLength; z += pitch ? pitch / 8 : 0.5) zs.push(z)
-  zs.push(fluteLength)
-  const position = []
-  for (const z of zs) {
-    const scale = Math.min(1, tipScale + ((1 - tipScale) * z) / tipLength)
-    const twist = (z / lead) * 2 * Math.PI
-    for (let j = 0; j < around; j++) {
-      const a = (j / around) * 2 * Math.PI
-      // A right-hand thread: the crest is where the angle around and the height agree, one pitch per turn.
-      const thread = pitch ? 1 - THREAD_DEPTH * (0.5 + 0.5 * Math.cos(2 * Math.PI * (z / pitch) - a)) : 1
-      const rho = r * scale * thread * (1 - FLUTE_DEPTH * Math.max(0, Math.sin(flutes * a)) ** 1.5)
-      position.push(rho * Math.cos(a + twist), rho * Math.sin(a + twist), z)
-    }
-  }
-  const index = []
-  for (let i = 0; i < zs.length - 1; i++) {
-    for (let j = 0; j < around; j++) {
-      const a = i * around + j, b = i * around + ((j + 1) % around)
-      index.push(a, b, b + around, a, b + around, a + around)
-    }
-  }
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3))
-  g.setIndex(index)
-  g.computeVertexNormals()
-  return g
-}
-
-const zCylinder = (radius: number, height: number, bottom: number) =>
-  new THREE.CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2).translate(0, 0, bottom + height / 2)
-
-// A drill, reamer or tap in its collet: fluted body, a little bare shank, then the collet nut (in the tool's plan
-// color) and holder.
-function toolModel(number: number, info: ToolInfo, envMap: THREE.Texture) {
-  const r = info.diameter / 2
-  const reamer = info.type === 'reamer'
-  const tap = info.type === 'tap'
-  const tipLength = reamer ? 0.4 : tap ? 3 * (info.pitch ?? 0) : r / Math.tan(((info.point_angle ?? 118) / 2) * (Math.PI / 180))
-  const shape = reamer ? { flutes: 6, helix: 0, tipScale: 0.85 } : tap ? { flutes: 4, helix: 0, tipScale: 0.75, pitch: info.pitch ?? 0 } : {}
-  const fluteLength = info.flute_length ?? info.diameter * 5
-  const steel = new THREE.MeshStandardMaterial({ color: 0xd3d8de, metalness: 0.9, roughness: 0.3, envMap })
-  const holder = new THREE.MeshStandardMaterial({ color: 0x6b737d, metalness: 0.8, roughness: 0.4, envMap })
-  const nut = new THREE.MeshStandardMaterial({ color: toolColor(number), metalness: 0.5, roughness: 0.4, envMap })
-  const nutRadius = r + 7
-  const nutBottom = fluteLength + 6
-  const group = new THREE.Group()
-  group.add(
-    new THREE.Mesh(fluteGeometry(r, tipLength, fluteLength, shape), steel),
-    new THREE.Mesh(zCylinder(r, 6, fluteLength), steel),
-    new THREE.Mesh(zCylinder(nutRadius, 12, nutBottom), nut),
-    new THREE.Mesh(zCylinder(nutRadius + 5, 30, nutBottom + 12), holder),
-  )
-  return group
-}
 
 // Part mesh plus toolpath, with a playback of the program. Z is up; the origin is G54 (front-left corner, top of the part).
 export default function Viewer({ job, onLine }: { job: Job; onLine: (line: number) => void }) {
@@ -141,7 +19,7 @@ export default function Viewer({ job, onLine }: { job: Job; onLine: (line: numbe
   const events = useMemo(() => timeline(job.toolpath), [job])
   const total = events.length ? events[events.length - 1].end : 0
   const lines = useMemo(() => (job.gcode ?? '').split('\n'), [job])
-  const steps = useMemo(() => describeSteps(events, job.holes, job.tool_info ?? {}), [events, job])
+  const steps = useMemo(() => describeSteps(events, job.holes, job.tool_info), [events, job])
   const play = useRef({ t: 0, playing: false, speed: DEFAULT_SPEED })
   const [ui, setUi] = useState({ t: 0, playing: false, speed: DEFAULT_SPEED, i: 0 })
   // ui is a frame behind when job changes (revise, undo); the new program can have fewer moves.
@@ -292,9 +170,9 @@ export default function Viewer({ job, onLine }: { job: Job; onLine: (line: numbe
       renderer.setAnimationLoop(null)
       controls.dispose()
       scene.traverse((o) => {
-        const m = o as THREE.Mesh
-        m.geometry?.dispose();
-        (m.material as THREE.Material | undefined)?.dispose()
+        if (!(o instanceof THREE.Mesh || o instanceof THREE.Line)) return
+        o.geometry.dispose()
+        for (const m of [o.material].flat()) m.dispose()
       })
       envMap.dispose()
       pmrem.dispose()

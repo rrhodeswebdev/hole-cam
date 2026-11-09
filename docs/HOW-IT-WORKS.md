@@ -415,7 +415,8 @@ Short definitions. For fuller, plain-language explanations, see [MANUFACTURING-P
 | 4. Write G-code | `src/hole_cam/gcode.py` |
 | 5. Safety checks and toolpath | `src/hole_cam/checks.py` |
 | Server | `src/hole_cam/api.py` |
-| Web page and 3D view | `web/src/App.jsx`, `web/src/Viewer.jsx` |
-| Tools, materials, machine | `data/*.json` |
+| Web page | `web/src/App.tsx` and its panels (`Results.tsx`, `ChangePlan.tsx`); API calls in `api.ts` |
+| 3D view and playback | `web/src/Viewer.tsx`; move timing and step text in `playback.ts`, tool models in `toolModel.ts` |
+| Tools, materials, machine | `data/*.json` (read by `src/hole_cam/data.py`) |
 | Test parts, plans, reference program, bad-program set | `fixtures/` |
 | LinuxCNC prove-out | `scripts/linuxcnc_check.py` |

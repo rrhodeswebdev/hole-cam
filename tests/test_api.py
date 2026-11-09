@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from test_planner import GOOD, FakeClient
 
 from hole_cam.api import MAX_UPLOAD, anthropic_client, app
-from hole_cam.gcode import _load, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import generate
 
 FIX = Path(__file__).parent.parent / "fixtures"
 MIXED = (FIX / "parts/mixed.step").read_bytes()
@@ -105,5 +106,5 @@ def test_bad_revision_requests_are_rejected(api, kw):
 
 def test_part_name_cannot_break_out_of_the_gcode_comment():
     found = {"part": {"top_z": 0}, "holes": []}
-    nc = generate(found, {"operations": []}, [], {}, _load("machine.json"), name="evil)\nM30\n(x")
+    nc = generate(found, {"operations": []}, [], {}, load_data("machine.json"), name="evil)\nM30\n(x")
     assert nc.splitlines()[1] == "O1000 (EVILM30X)"

@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from hole_cam.gcode import _load
+from hole_cam.data import load_data
 from hole_cam.holes import find_holes
 from hole_cam.planner import offered_tools, plan_job, revise_plan, validate
 
 FIX = Path(__file__).parent.parent / "fixtures"
-TOOLS, MATERIALS, MACHINE = _load("tools.json"), _load("materials.json"), _load("machine.json")
+TOOLS, MATERIALS, MACHINE = load_data("tools.json"), load_data("materials.json"), load_data("machine.json")
 MIXED = find_holes(FIX / "parts/mixed.step")  # holes 1,2: Ø6.8 through; 3: Ø5 x 5; 4: Ø5 x 20
 GOOD = json.loads((FIX / "plans/mixed.json").read_text())
 

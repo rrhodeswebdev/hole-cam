@@ -4,11 +4,11 @@ from pathlib import Path
 import pytest
 
 from hole_cam.checks import check, context_for
-from hole_cam.gcode import _load
+from hole_cam.data import load_data
 from hole_cam.holes import find_holes
 
 FIX = Path(__file__).parent.parent / "fixtures"
-MACHINE = _load("machine.json")
+MACHINE = load_data("machine.json")
 PROGRAMS = sorted((FIX / "gcode").glob("*.nc"))
 
 

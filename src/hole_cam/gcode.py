@@ -13,8 +13,6 @@ import re
 import sys
 from pathlib import Path
 
-DATA = Path(__file__).parents[2] / "data"
-
 
 def generate(found, plan, tools, material, machine, name="PART"):
     holes = {h["id"]: h for h in found["holes"]}
@@ -53,7 +51,7 @@ def generate(found, plan, tools, material, machine, name="PART"):
             out += [f"T{t} M06 ({_comment(tool['description'])})", f"G00 G43 H{t} Z{_f(clear)} S{rpm} M03", "M08"]
         for i, h in enumerate(_nearest_first([holes[i] for i in op["hole_ids"]])):
             top = h["top_z"] - z0
-            z = top - _tip_depth(op, tool, h, machine)
+            z = top - tip_depth(op, tool, h, machine)
             xy, zr = f"X{_f(h['x'])} Y{_f(h['y'])}", f"Z{_f(z)} R{_f(top + r_clear)}"
             if i == 0:
                 out.append(f"G00 {xy}")
@@ -69,7 +67,7 @@ def generate(found, plan, tools, material, machine, name="PART"):
     return "\n".join(out) + "\n"
 
 
-def _tip_depth(op, tool, hole, machine):
+def tip_depth(op, tool, hole, machine):
     """How far below the hole's top the tool tip goes."""
     if op["op"] == "spot_drill":
         return op["depth"]
@@ -117,13 +115,10 @@ def _f(v):
     return "0." if s == "-0." else s
 
 
-def _load(name):
-    return json.loads((DATA / name).read_text())
-
-
 if __name__ == "__main__":
+    from hole_cam.data import load_data
     from hole_cam.holes import find_holes
 
     step, plan_path, mat = sys.argv[1:4]
-    print(generate(find_holes(step), json.loads(Path(plan_path).read_text()), _load("tools.json"),
-                   _load("materials.json")[mat], _load("machine.json"), name=Path(step).stem), end="")
+    print(generate(find_holes(step), json.loads(Path(plan_path).read_text()), load_data("tools.json"),
+                   load_data("materials.json")[mat], load_data("machine.json"), name=Path(step).stem), end="")

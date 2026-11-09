@@ -7,7 +7,8 @@ File names are <part>__<expected check>__<n>.nc, or <part>__clean.nc. The part n
 import json
 from pathlib import Path
 
-from hole_cam.gcode import _load, generate
+from hole_cam.data import load_data
+from hole_cam.gcode import generate
 from hole_cam.holes import find_holes
 
 FIX = Path(__file__).parent
@@ -40,7 +41,7 @@ BOSS_BUGS = [("rapid-into-part", "G98 G81 X10. Y10. Z-11.5", "G99 G81 X10. Y10. 
 def program(part):
     found = find_holes(FIX / "parts" / f"{part}.step")
     plan = json.loads((FIX / "plans" / f"{part}.json").read_text())
-    return generate(found, plan, _load("tools.json"), _load("materials.json")["6061"], _load("machine.json"), name=part)
+    return generate(found, plan, load_data("tools.json"), load_data("materials.json")["6061"], load_data("machine.json"), name=part)
 
 
 def main():

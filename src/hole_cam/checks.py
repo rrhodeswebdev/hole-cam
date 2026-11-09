@@ -148,17 +148,11 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
             elif code in CYCLES:
                 cycle, initial_z = int(code), z
 
-        def target(axis, cur):
-            if axis not in val:
-                return cur
-            # From home (Z inf) an incremental move stays at an unknown height above the part: inf + d is inf.
-            return val[axis] if absolute or cur is None else cur + val[axis]
-
         if cycle is not None and ({"X", "Y"} & val.keys() or any(c in CYCLES for c in g)):
             cycle_z, cycle_r, cycle_q = val.get("Z", cycle_z), val.get("R", cycle_r), val.get("Q", cycle_q)
             if cycle_z is None or cycle_r is None:
                 raise ValueError(f"line {n}: G{cycle} has no Z or no R word, so no machine can run it")
-            nx, ny = target("X", x), target("Y", y)
+            nx, ny = _target(val, absolute, "X", x), _target(val, absolute, "Y", y)
             if not spindle:
                 flag(n, "spindle-off-cut", f"G{cycle} drills X{nx:g} Y{ny:g} with the spindle stopped; add M03.")
             needs_offset(n)
@@ -181,7 +175,7 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
                 move("rapid", (nx, ny, cycle_z), (nx, ny, back), n)
             x, y, z = nx, ny, back
         elif {"X", "Y", "Z"} & val.keys():
-            nx, ny, nz = target("X", x), target("Y", y), target("Z", z)
+            nx, ny, nz = (_target(val, absolute, a, cur) for a, cur in (("X", x), ("Y", y), ("Z", z)))
             if nz != z:
                 needs_offset(n)
             if motion == 0:
@@ -204,17 +198,24 @@ def check(program, machine, local_tops=None, bottom_z=None, max_breakthrough=5.0
     return findings
 
 
+def _target(words, absolute, axis, current):
+    """Where a move leaves one axis: the word's value (G90), current + value (G91), or current if the axis isn't given.
+    From home (Z inf) an incremental move stays at an unknown height above the part: inf + d is inf."""
+    if axis not in words:
+        return current
+    return words[axis] if absolute or current is None else current + words[axis]
+
+
 if __name__ == "__main__":
-    import json
     from pathlib import Path
 
-    from hole_cam.gcode import _load
+    from hole_cam.data import load_data
 
     ctx = {}
     if len(sys.argv) > 2:
         from hole_cam.holes import find_holes
         ctx = context_for(find_holes(sys.argv[2]))
-    found = check(Path(sys.argv[1]).read_text(), _load("machine.json"), **ctx)
+    found = check(Path(sys.argv[1]).read_text(), load_data("machine.json"), **ctx)
     for f in found:
         print(f"line {f['line']}: [{f['check']}] {f['message']}")
     print("OK: no problems found" if not found else f"{len(found)} problem(s)")

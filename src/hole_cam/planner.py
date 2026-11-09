@@ -12,10 +12,12 @@ import json
 import math
 import re
 import sys
+from pathlib import Path
 
 import anthropic
 
-from hole_cam.gcode import _load, _tip_depth
+from hole_cam.data import load_data
+from hole_cam.gcode import tip_depth
 
 MODEL = "claude-opus-5-5"
 DIAMETER_TOL = 0.02  # mm: same nominal size, allowing for inch-to-mm rounding; a 9/32" drill is not a 7.1 mm one
@@ -233,35 +235,15 @@ def validate(plan, found, tools, machine):
     holes = {h["id"]: h for h in found["holes"]}
     lib = {t["id"]: t for t in tools}
     errors = []
-    spotted, drilled, reamed = {}, {}, {}  # hole id -> operation number
+    spotted, drilled, reamed, tapped = {}, {}, {}, {}  # hole id -> operation number
     drill_size = {}  # hole id -> diameter of the drill that made it
-    # Holes that start at the floor of a wider hole on the same center (e.g. under a counterbore): hole id -> wider id.
-    above = {b["id"]: a["id"] for a in holes.values() for b in holes.values()
-             if abs(a["x"] - b["x"]) < 1e-3 and abs(a["y"] - b["y"]) < 1e-3 and a["diameter"] > b["diameter"]
-             and abs(b["top_z"] - (a["top_z"] - a["depth"])) < 0.01}
-
-    callout = {}  # hole id -> its drawing callout
-    for c in drawing_callouts(plan, machine):
-        count = re.match(r"\s*(\d+)\s*X", c["callout"], re.I)
-        if count and len(c["hole_ids"]) > int(count[1]):
-            errors.append(f"drawing: {c['callout']!r} is for {count[1]} holes but lists {len(c['hole_ids'])}")
-        for hid in c["hole_ids"]:
-            h = holes.get(hid)
-            if h is None:
-                errors.append(f"drawing: {c['callout']!r} points at hole {hid}, which does not exist")
-                continue
-            if hid in callout:
-                errors.append(f"drawing: hole {hid} has two callouts, {callout[hid]['callout']!r} and {c['callout']!r}")
-            if not _thread_holds(c["diameter_mm"], c["pitch_mm"], h["diameter"]) if c["tap"] else abs(c["diameter_mm"] - h["diameter"]) > DIAMETER_TOL:
-                errors.append(f"drawing: {c['callout']!r} is {c['diameter_mm']:g} mm but hole {hid} is {h['diameter']:g} mm "
-                              "in the model: wrong hole, or the drawing and model disagree")
-            callout[hid] = c
+    above = _under_wider(holes)
+    callout = _callouts_by_hole(plan, holes, machine, errors)
     needs_ream = {hid for hid, c in callout.items() if c["ream"]}
     needs_tap = {hid for hid, c in callout.items() if c["tap"]}
     to_ream = {hid for op in plan["operations"] if op["op"] == "ream" for hid in op["hole_ids"]}
     tap_for = {hid: lib[op["tool_id"]] for op in plan["operations"] if op["op"] == "tap" and op["tool_id"] in lib
                for hid in op["hole_ids"]}
-    tapped = {}
 
     for n, op in enumerate(plan["operations"], 1):
         tool = lib.get(op["tool_id"])
@@ -283,7 +265,7 @@ def validate(plan, found, tools, machine):
                     errors.append(f"{where}: spot depth {op['depth']} mm gives a {spot_d:.1f} mm spot on a {h['diameter']} mm hole")
                 spotted.setdefault(hid, n)
                 continue
-            reach = _tip_depth(op, tool, h, machine)
+            reach = tip_depth(op, tool, h, machine)
             if reach > tool["flute_length"]:
                 errors.append(f"{where}: hole {hid} needs {reach:.1f} mm of reach; flutes are {tool['flute_length']} mm")
             if op["op"] == "tap":
@@ -349,7 +331,9 @@ def validate(plan, found, tools, machine):
             errors.append(f"hole {b} starts {holes[a]['depth']:g} mm down, at the floor of hole {a}: drill hole {a} "
                           f"before hole {b} is spotted or drilled, or the rapid to its R plane ends inside the part")
 
-    has_drill = lambda h: bool(_fits(tools, "drill", h["diameter"]))
+    def has_drill(h):
+        return bool(_fits(tools, "drill", h["diameter"]))
+
     for hid, h in holes.items():
         path = _ream_path(tools, h)
         if hid in needs_ream and hid not in reamed and path:
@@ -370,12 +354,45 @@ def validate(plan, found, tools, machine):
     return {"errors": errors}
 
 
+def _under_wider(holes):
+    """Holes that start at the floor of a wider hole on the same center (e.g. under a counterbore): hole id -> wider id."""
+    return {b["id"]: a["id"] for a in holes.values() for b in holes.values()
+            if abs(a["x"] - b["x"]) < 1e-3 and abs(a["y"] - b["y"]) < 1e-3 and a["diameter"] > b["diameter"]
+            and abs(b["top_z"] - (a["top_z"] - a["depth"])) < 0.01}
+
+
+def _callouts_by_hole(plan, holes, machine, errors):
+    """hole id -> its drawing callout. Adds to errors each callout that lists more holes than its count, points at a
+    hole that doesn't exist or already has a callout, or doesn't fit the hole's size in the model."""
+    callout = {}
+    for c in drawing_callouts(plan, machine):
+        count = re.match(r"\s*(\d+)\s*X", c["callout"], re.I)
+        if count and len(c["hole_ids"]) > int(count[1]):
+            errors.append(f"drawing: {c['callout']!r} is for {count[1]} holes but lists {len(c['hole_ids'])}")
+        for hid in c["hole_ids"]:
+            h = holes.get(hid)
+            if h is None:
+                errors.append(f"drawing: {c['callout']!r} points at hole {hid}, which does not exist")
+                continue
+            if hid in callout:
+                errors.append(f"drawing: hole {hid} has two callouts, {callout[hid]['callout']!r} and {c['callout']!r}")
+            if c["tap"]:
+                fits = _thread_holds(c["diameter_mm"], c["pitch_mm"], h["diameter"])
+            else:
+                fits = abs(c["diameter_mm"] - h["diameter"]) <= DIAMETER_TOL
+            if not fits:
+                errors.append(f"drawing: {c['callout']!r} is {c['diameter_mm']:g} mm but hole {hid} is {h['diameter']:g} mm "
+                              "in the model: wrong hole, or the drawing and model disagree")
+            callout[hid] = c
+    return callout
+
+
 if __name__ == "__main__":
     from hole_cam.holes import find_holes
 
     step, mat, *pdf = sys.argv[1:4]
-    result = plan_job(find_holes(step), _load("materials.json")[mat], _load("tools.json"), _load("machine.json"),
-                      drawing=open(pdf[0], "rb").read() if pdf else None)
+    result = plan_job(find_holes(step), load_data("materials.json")[mat], load_data("tools.json"), load_data("machine.json"),
+                      drawing=Path(pdf[0]).read_bytes() if pdf else None)
     json.dump(result["plan"], sys.stdout, indent=2)
     for line in result["errors"] + result["plan"]["warnings"]:
         print(line, file=sys.stderr)
