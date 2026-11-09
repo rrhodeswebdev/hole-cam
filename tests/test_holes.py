@@ -42,7 +42,9 @@ def test_split_faces_give_same_holes(name, tmp_path):
     div.SetNbSplitPoints(1)
     div.Perform()
     split = cq.Shape.cast(div.Result())
-    n_cyl = lambda s: sum(f.geomType() == "CYLINDER" for f in s.Faces())
+    def n_cyl(s):
+        return sum(f.geomType() == "CYLINDER" for f in s.Faces())
+
     assert n_cyl(split) == 2 * n_cyl(shape)  # make sure the split actually happened
 
     path = tmp_path / "split.step"

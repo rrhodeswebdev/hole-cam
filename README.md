@@ -56,7 +56,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **137 automated tests:** `uv run pytest`.
+- **Automated checks:** 139 Python tests, 8 web unit tests, lint and type checks, all run by `scripts/check.sh` in CI and before every commit.
 - **An eval of the planner:** `scripts/eval.py` plans 7 parts 3 times each per model, and scores every run with validation, the safety checks and drawing answers written by hand. On 63 plans, Opus, Sonnet and Haiku 5.5 were all valid after at most one retry and all passed the checks. Sonnet read every called-out hole on the drawings, as Opus did, at 41% of the cost. Haiku missed some callouts and still passed every check, which is why the drawing answers are scored. Details: [docs/AI-IN-HOLE-CAM.md](docs/AI-IN-HOLE-CAM.md#measured-with-the-eval).
 - **A second opinion from LinuxCNC:** every program below was also run through LinuxCNC's own G-code interpreter, the one real machines run (`scripts/linuxcnc_check.py`, in Docker). All 10 read without error, every move matches the toolpath the safety checks traced (up to 289 moves each), and the holes LinuxCNC's moves cut match the plan, taps included. Its first run found two real bugs, now fixed: a `G43` line relying on `G00` being still in effect, which LinuxCNC rejects, and nested parentheses in tool comments. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#proving-the-programs-out-on-linuxcnc).
 - **Real parts:** 11 real CAD parts from NIST, most of them inch parts modeled on their side or around their center. They exposed three hole-finding bugs, a missing set of inch drills and a gap in the safety checks; all are fixed. Four parts were checked against their drawings and match exactly, and two are now regression tests. Live plans on four parts all passed the safety checks. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md).
@@ -68,7 +68,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 - **Tapping from a real drawing, live:** FTC-10's 5-page drawing has three `2X M3x0.5-6g` callouts on page 4. Claude found them, and the plan drills those six holes 2.5 mm and taps them M3 on `G84`. It also pointed out, unprompted, that "6g" is a class for external threads. It passed first time ($0.25, 95 s). Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#reading-the-drawings).
 - **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
 - **Plan changes, live:** on the mixed plate, "do the deep holes first" was reordered without adding a tool change. "Skip spot drilling to save time" was declined with the reason, plus a cheaper change that was allowed. "Peck every hole, 2 mm at a time" was applied, with two operations merged, and the cycle time went from 0:35 to 0:40. Each took 6–9 seconds. "Tap the 5 mm holes M6 and the 6.8 mm holes M8" added both taps, kept the drills as the tap drills, and warned that the 5 mm deep blind hole gets only 2–3 full threads (10.5 s, $0.04).
-- **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on.
+- **The web page** was also driven in a real browser in light mode, dark mode and at phone width, with the planner faked. For the playback, the check confirms it starts by itself and advances, the highlighted G-code line follows the slider, the end shows Replay, and it doesn't start by itself when reduced motion is on. The main path (plan, playback, change the plan, undo) is a repeatable check: `cd web && npm run e2e`.
 
 **Not verified yet:**
 - [x] STEP files exported from real CAD software ([11 NIST parts](docs/REAL-PARTS.md))
@@ -93,7 +93,7 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## Running it
 
-Needs Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20+, and an Anthropic API key.
+Needs Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 22.18+, and an Anthropic API key.
 
 ```bash
 uv sync
@@ -103,6 +103,8 @@ uv run --env-file .env uvicorn hole_cam.api:app       # open http://127.0.0.1:80
 ```
 
 For development, add `--reload` to the API command and run `npm run dev` in `web/`.
+
+Checks: `scripts/check.sh` runs lint, the Python tests and the web type-check and unit tests; CI runs it on every push and pull request. Turn it on as a pre-commit hook once per clone with `git config core.hooksPath .githooks`. The browser check (`cd web && npm run e2e`) needs a one-time `npx playwright-core install chromium-headless-shell` in `web/`.
 
 Command-line versions of each step:
 

@@ -50,7 +50,7 @@ Play to a tap: it backs out with the spindle reversed. Optional: try "Skip spot 
 
 **6. How it's kept honest (3:15).**
 
-> "Three layers sit between Claude and a machine: the schema, the validator and the safety checks. As a second opinion, I ran the programs through LinuxCNC's own interpreter. Its first run caught two real portability bugs in my G-code. Now ten programs pass, with every move matching. 137 automated tests, and live runs on four real NIST parts. And an eval: it plans seven parts three times each per model and scores every run against drawing answers I wrote by hand. That showed something the checks can't: Haiku missed tolerance callouts on a drawing and still passed every check. A valid, safe program can still be the wrong program. What isn't done yet: nothing has run on a real machine, and the speeds and feeds are conservative starting values, not checked against a tool maker's chart."
+> "Three layers sit between Claude and a machine: the schema, the validator and the safety checks. As a second opinion, I ran the programs through LinuxCNC's own interpreter. Its first run caught two real portability bugs in my G-code. Now ten programs pass, with every move matching. 147 automated tests, and live runs on four real NIST parts. And an eval: it plans seven parts three times each per model and scores every run against drawing answers I wrote by hand. That showed something the checks can't: Haiku missed tolerance callouts on a drawing and still passed every check. A valid, safe program can still be the wrong program. What isn't done yet: nothing has run on a real machine, and the speeds and feeds are conservative starting values, not checked against a tool maker's chart."
 
 ## Likely questions
 

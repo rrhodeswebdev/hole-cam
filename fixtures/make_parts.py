@@ -17,8 +17,8 @@ POINT_ANGLE = 118  # standard twist-drill point
 V = cq.Vector
 
 
-def block(l, w, t):
-    return cq.Workplane("XY").box(l, w, t, centered=False).val()
+def block(length, width, thickness):
+    return cq.Workplane("XY").box(length, width, thickness, centered=False).val()
 
 
 def blind(x, y, d, top_z, depth, point=False):

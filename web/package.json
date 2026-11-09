@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "test": "node --test 'test/**/*.test.ts'",
+    "check": "tsc && tsc -p test && npm test",
+    "e2e": "npm run build && node e2e/ui_check.mjs"
   },
   "dependencies": {
     "react": "^19.3.1",
@@ -12,10 +15,12 @@
     "three": "^0.187.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "playwright-core": "1.64.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
   }
