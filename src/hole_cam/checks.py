@@ -1,4 +1,4 @@
-"""Safety checks on a G-code program (SPEC.md 3.5).
+"""Safety checks on a G-code program. See docs/HOW-IT-WORKS.md.
 
 The checker reads the program one line at a time and keeps track of the machine's state: motion mode, canned
 cycle, spindle, loaded tool, tool length offset and position. Each problem is reported with its line number.

@@ -1,4 +1,4 @@
-"""Find drillable holes in a STEP part (SPEC.md 3.1).
+"""Find drillable holes in a STEP part. See docs/HOW-IT-WORKS.md.
 
 A hole is an inner cylindrical surface that goes all the way around; a partial one is a rounded inside
 corner or the end of a slot, not a hole. The part is turned so the side with the most drillable holes faces

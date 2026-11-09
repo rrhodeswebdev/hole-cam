@@ -1,4 +1,4 @@
-"""Turn a machining plan into Fanuc-style G-code (SPEC.md 3.4).
+"""Turn a machining plan into Fanuc-style G-code. See docs/HOW-IT-WORKS.md.
 
 This module makes no machining decisions. The plan chooses the tools and cycles, the material table sets
 speeds and feeds, and this code only does the arithmetic and formatting.

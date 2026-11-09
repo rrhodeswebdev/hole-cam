@@ -1,5 +1,5 @@
 """HTTP API: upload a STEP part (and optionally its drawing), get back the plan, G-code, safety checks and a 3D
-preview (SPEC.md 7).
+preview. See docs/HOW-IT-WORKS.md.
 
 Run: uv run uvicorn hole_cam.api:app --reload
 """

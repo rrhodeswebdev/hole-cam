@@ -1,4 +1,4 @@
-"""Plan drilling operations with Claude, then check the plan with plain code (SPEC.md 3.2 and 3.3).
+"""Plan drilling operations with Claude, then check the plan with plain code. See docs/AI-IN-HOLE-CAM.md.
 
 Claude picks the operations, tools, cycles and order. It never sets speeds or feeds; those come from the
 material table in gcode.py. Every plan goes through validate(), and a rejected plan is sent back once with

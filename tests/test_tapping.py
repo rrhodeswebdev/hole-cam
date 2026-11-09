@@ -46,6 +46,7 @@ def with_ops(*ops, drawing=(M6, M8)):
     # The drawing says M8 fine pitch (1.0); the library tap is 1.25.
     (with_ops(tap("TAP-M6X1", [3, 4]), tap("TAP-M8X1.25", [1, 2]), drawing=[M6, {**M8, "thread": 1.0}]), "doesn't make that"),
     (with_ops(tap("TAP-M8X1.25", [3, 4]), tap("TAP-M8X1.25", [1, 2])), "doesn't fit a 5.0 mm hole"),
+    (with_ops(tap("TAP-M6X1", [3, 4]), tap("TAP-M8X1.25", [1, 2]), tap("TAP-M6X1", [3])), "hole 3 is already tapped"),
 ])
 def test_validation_catches(plan, expect):
     found = errors(plan)

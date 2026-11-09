@@ -70,6 +70,10 @@ def with_ops(*ops, drawing=(TIGHT, LOOSE)):
     (with_ops(*REAMED["operations"], drawing=[{**TIGHT, "hole_ids": [1, 3]}, {**LOOSE, "hole_ids": []}]), "wrong hole, or the drawing"),
     (with_ops(*REAMED["operations"], drawing=[{**TIGHT, "callout": "1X Ø.250 +.003 -.000"}, LOOSE]), "is for 1 holes but lists 2"),
     (with_ops(*REAMED["operations"], drawing=[TIGHT, {**LOOSE, "hole_ids": [3, 9]}]), "hole 9, which does not exist"),
+    (with_ops(*REAMED["operations"], drawing=[TIGHT, LOOSE, {**LOOSE, "callout": "Ø.281 +.005 -.000"}]), "hole 3 has two callouts"),
+    (with_ops(*REAMED["operations"], ream([1])), "hole 1 is already reamed"),
+    (with_ops(spot([1, 2, 3]), drill("DRL-6.0", [1, 2]), drill("DRL-9/32IN", [3]), {**ream([1, 2]), "tool_id": "RMR-6H7"}),
+     "a 6.0 mm reamer on a 6.35 mm hole"),
 ])
 def test_validation_catches(plan, expect):
     found = errors(plan)

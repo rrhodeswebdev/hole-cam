@@ -1,4 +1,4 @@
-"""Build the SPEC.md section 5 test parts as STEP files, each with the hole list a correct detector must return.
+"""Build the test parts as STEP files, each with the hole list a correct detector must return.
 
 Run: uv run python fixtures/make_parts.py
 Units are mm. Each part's front-left-bottom corner is at the origin, and holes are drilled downward (-Z).

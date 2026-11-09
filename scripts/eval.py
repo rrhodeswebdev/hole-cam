@@ -1,4 +1,4 @@
-"""Eval harness for the Claude planner (SPEC-eval.md).
+"""Eval harness for the Claude planner. Results and design: docs/AI-IN-HOLE-CAM.md.
 
 Runs the real planner on a fixed set of parts, several times per model and effort setting, scores each run with the
 app's own validation and safety checks plus hand-written drawing answers, and prints a Markdown scorecard.

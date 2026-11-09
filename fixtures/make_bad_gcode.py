@@ -1,4 +1,4 @@
-"""Build the G-code check set (SPEC.md 5): clean programs plus copies with exactly one planted problem.
+"""Build the G-code check set: clean programs plus copies with exactly one planted problem.
 
 Run: uv run python fixtures/make_bad_gcode.py
 File names are <part>__<expected check>__<n>.nc, or <part>__clean.nc. The part name gives the checker its context.
