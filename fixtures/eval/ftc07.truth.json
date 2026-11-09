@@ -1,0 +1,6 @@
+[
+  {"callout": "4X Ø.250 +.003 -.001", "units": "in", "diameter": 0.25, "plus": 0.003, "minus": -0.001, "thread": 0, "holes": 4, "needs": "ream"},
+  {"callout": "2X Ø.250 +.003 -.000, and two single Ø.250 +.003 -.000", "units": "in", "diameter": 0.25, "plus": 0.003, "minus": 0, "thread": 0, "holes": 4, "needs": "ream"},
+  {"callout": "4X Ø.281 +.006 -.001", "units": "in", "diameter": 0.281, "plus": 0.006, "minus": -0.001, "thread": 0, "holes": 4, "needs": "drill"},
+  {"callout": "counterbore Ø.438 ±.010", "units": "in", "diameter": 0.438, "plus": 0.010, "minus": -0.010, "thread": 0, "holes": 4, "needs": "drill"}
+]

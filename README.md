@@ -56,14 +56,15 @@ Anything that can break a tool if it's wrong is plain, tested code: geometry, fe
 
 ## How I know it works
 
-- **122 automated tests:** `uv run pytest`.
+- **137 automated tests:** `uv run pytest`.
+- **An eval of the planner:** `scripts/eval.py` plans 7 parts 3 times each per model, and scores every run with validation, the safety checks and drawing answers written by hand. On 63 plans, Opus, Sonnet and Haiku 5.5 were all valid after at most one retry and all passed the checks. Sonnet read every called-out hole on the drawings, as Opus did, at 41% of the cost. Haiku missed some callouts and still passed every check, which is why the drawing answers are scored. Details: [docs/AI-IN-HOLE-CAM.md](docs/AI-IN-HOLE-CAM.md#measured-with-the-eval).
 - **A second opinion from LinuxCNC:** every program below was also run through LinuxCNC's own G-code interpreter, the one real machines run (`scripts/linuxcnc_check.py`, in Docker). All 10 read without error, every move matches the toolpath the safety checks traced (up to 289 moves each), and the holes LinuxCNC's moves cut match the plan, taps included. Its first run found two real bugs, now fixed: a `G43` line relying on `G00` being still in effect, which LinuxCNC rejects, and nested parentheses in tool comments. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#proving-the-programs-out-on-linuxcnc).
 - **Real parts:** 11 real CAD parts from NIST, most of them inch parts modeled on their side or around their center. They exposed three hole-finding bugs, a missing set of inch drills and a gap in the safety checks; all are fixed. Four parts were checked against their drawings and match exactly, and two are now regression tests. Live plans on four parts all passed the safety checks. Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md).
 - **Hole finding** is also tested on five generated parts with known answers: a plate, mixed through and blind holes with a drill-point bottom, an odd size with no matching drill, a side hole and a hole drilled up from the bottom, and a boss whose outer wall must not count as a hole. Two of the parts are also re-run with every hole split into half-faces, as real CAD exports often do.
 - **G-code:** the reference program's speeds, feeds, depths and hole order were checked by hand against the formulas, and a test fails if the output ever changes.
 - **Safety checks:** a set of 20 programs, 18 with one planted problem each and 2 clean. Result: **18/18 caught, 0 false alarms.** Each bad program must trip exactly its planted check.
 - **The validator caught a mistake in my own plan:** I'd written plain drilling for 25 mm deep, 6.8 mm holes. That's 3.7× the diameter, past the 3× peck rule the tool is meant to enforce.
-- **Reading a real drawing, live:** NIST FTC-07's 4-page drawing has dimensions drawn as lines, with no text to search. Claude returned all six hole callouts for the drilling side with the right sizes and tolerances, and left out the ones for side holes. Code flagged the 8 Ø.250 +.003" holes for reaming, and the plan spots, drills 6.0 mm and reams them with a 1/4" reamer. It passed validation first time and all six safety checks. The drawing roughly doubles the cost of a plan, to $0.17. FTC-08 with its drawing also passed first time ($0.12).
+- **Reading a real drawing, live:** NIST FTC-07's 4-page drawing has dimensions drawn as lines, with no text to search. Claude returned all six hole callouts for the drilling side with the right sizes and tolerances, and left out the ones for side holes. Code flagged the 8 Ø.250 +.003" holes for reaming, and the plan spots, drills 6.0 mm and reams them with a 1/4" reamer. It passed validation first time and all six safety checks; over the eval's three runs, first-time passes happened once, so the retry matters. The drawing roughly doubles the cost of a plan, to $0.17. FTC-08 with its drawing also passed first time ($0.12).
 - **Tapping from a real drawing, live:** FTC-10's 5-page drawing has three `2X M3x0.5-6g` callouts on page 4. Claude found them, and the plan drills those six holes 2.5 mm and taps them M3 on `G84`. It also pointed out, unprompted, that "6g" is a class for external threads. It passed first time ($0.25, 95 s). Details: [docs/REAL-PARTS.md](docs/REAL-PARTS.md#reading-the-drawings).
 - **Live run:** the mixed plate through the real API and web page. Claude's plan passed validation and the program passed all six checks. Unprompted, Claude also warned that the 6.8 mm and 5.0 mm holes are M8 and M6 tap-drill sizes, so tapping may be missing. Planning takes about 15–20 seconds.
 - **Plan changes, live:** on the mixed plate, "do the deep holes first" was reordered without adding a tool change. "Skip spot drilling to save time" was declined with the reason, plus a cheaper change that was allowed. "Peck every hole, 2 mm at a time" was applied, with two operations merged, and the cycle time went from 0:35 to 0:40. Each took 6–9 seconds. "Tap the 5 mm holes M6 and the 6.8 mm holes M8" added both taps, kept the drills as the tap drills, and warned that the 5 mm deep blind hole gets only 2–3 full threads (10.5 s, $0.04).
@@ -112,6 +113,7 @@ uv run --env-file .env python -m hole_cam.planner fixtures/nist/nist_ftc_10_asme
 uv run python -m hole_cam.gcode   fixtures/parts/mixed.step plan.json 6061 > mixed.nc
 uv run python -m hole_cam.checks  mixed.nc fixtures/parts/mixed.step
 uv run python scripts/linuxcnc_check.py fixtures/parts/mixed.step plan.json 6061   # LinuxCNC second opinion, needs Docker
+uv run --env-file .env python scripts/eval.py --settings opus-5-5/medium,sonnet-5-5/medium   # planner eval, about $3
 ```
 
 Regenerate the test fixtures with `uv run python fixtures/make_parts.py` and `uv run python fixtures/make_bad_gcode.py`.
@@ -130,6 +132,7 @@ On Intel Macs, a few CadQuery dependencies are pinned to their last releases wit
 | `web/` | React and three.js front end |
 | `data/` | Tool library (drills, reamers, taps), materials, machine limits |
 | `scripts/linuxcnc_check.py` | Runs a program through LinuxCNC's interpreter and compares |
+| `scripts/eval.py` | Runs the planner on 7 parts per model setting and prints a scorecard ([SPEC-eval.md](SPEC-eval.md)) |
 | `fixtures/` | Test parts (generated and from NIST), plans, reference program, bad G-code set |
 | `docs/HOW-IT-WORKS.md` | What each stage does and why |
 | `docs/REAL-PARTS.md` | Results on 11 real NIST parts, and what they broke |

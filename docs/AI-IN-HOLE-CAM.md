@@ -219,7 +219,7 @@ Live runs on 6061 aluminum, measured on 2026-11-07:
 | NIST FTC-09 (29 holes) | 21.7 s | 7,390 | 2,235 | $0.074 | 1, valid |
 | NIST FTC-10 (28 holes) | 55.7 s | 19,597 | 5,776 | $0.194 | 2, valid on the retry |
 
-Costs are estimated from the token counts at Opus 5.5 list prices ($4 per million input tokens, $20 per million output). Output tokens include the model's reasoning. FTC-10 is the only live plan so far that failed validation; the retry with the errors listed fixed it.
+Costs are estimated from the token counts at Opus 5.5 list prices ($4 per million input tokens, $20 per million output). Output tokens include the model's reasoning. Among these single runs, FTC-10 was the only plan that failed validation, and the retry with the errors listed fixed it. Repeated runs show first-try rejections are more common than that ([Measured with the eval](#measured-with-the-eval)).
 
 The NIST runs came after the tool library grew from 12 to 36 drills, which is why input is about 7,000 tokens: at the time, the whole library went into every prompt. Since then Claude gets only the relevant tools:
 
@@ -228,13 +228,37 @@ The NIST runs came after the tool library grew from 12 to 36 drills, which is wh
 | Mixed plate, relevant tools only | 12.7 s | 1,893 | 1,258 | $0.033 | 1, valid |
 | NIST FTC-07, relevant tools only | 33.1 s | 3,303 | 3,320 | $0.080 | 1, valid |
 | NIST FTC-07 with its 4-page drawing | 63.0 s | 11,929 | 6,121 | $0.17 | 1, valid |
-
 | NIST FTC-08 with its drawing | 36.9 s | 11,374 | 3,782 | $0.12 | 1, valid |
 | NIST FTC-10 with its 5-page drawing | 94.6 s | 15,802 | 9,287 | $0.25 | 1, valid |
 
 The drawing adds about 8,600 input tokens on FTC-07, roughly 2,000 per page, and doubles the cost. On that run Claude read the six callouts for holes in this setup, left out the four for side holes, and planned the 8 Ø.250 +.003" holes as spot, 6.0 mm drill, 1/4" ream. On FTC-10 (measured 2026-11-08) it read all 12 callouts that apply, including three `2X M3x0.5-6g` threads: it drilled those six holes 2.5 mm and tapped them M3. All three programs passed all six checks, and LinuxCNC's interpreter ([REAL-PARTS.md](REAL-PARTS.md#proving-the-programs-out-on-linuxcnc)).
 
 What Claude did on those real parts is in [REAL-PARTS.md](REAL-PARTS.md).
+
+---
+
+## Measured with the eval
+
+The runs above are single runs, done by hand. `scripts/eval.py` ([SPEC-eval.md](../SPEC-eval.md)) repeats them: it plans 7 parts (the 4 generated parts, and NIST FTC-07, 08 and 10 with their drawings) several times per model, and scores every run with the app's own validation and safety checks. Callouts read off a drawing are compared with answers written by hand from the drawings (`fixtures/eval/`), by hole group, so one `4X` callout and two `2X` callouts for the same holes score the same.
+
+First sweep, 2026-11-08: 3 runs per part, medium effort, 63 plans, $3.29 in total.
+
+| Model | Runs | Valid on the 1st try | Valid after the retry | Passed the 6 checks | Called-out holes found | Holes wrongly called out, per run | Same plan each run | $ per plan | Median time | Slowest |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Opus 5.5 | 21 | 76% | 100% | 100% | 100% | 0.0 | 90% | $0.108 | 11 s | 81 s |
+| Sonnet 5.5 | 21 | 67% | 100% | 100% | 100% | 0.0 | 100% | $0.044 | 6 s | 44 s |
+| Haiku 5.5 | 21 | 67% | 100% | 100% | 89% | 0.3 | 90% | $0.004 | 11 s | 67 s |
+
+Rebuild it per part with `uv run python scripts/eval.py --summarize evals/results/<file>.jsonl --by-case`.
+
+What it showed:
+
+1. **The retry matters more than the single runs suggested.** Every plan was valid after at most one retry, and every program passed the six checks. But a quarter to a third of first attempts were rejected. The single runs above have FTC-07 and FTC-08 passing first time; over three runs each, Opus did that once on each. The results file doesn't say what the rejected attempts got wrong; the harness now records it (`first_errors`) for the next sweep.
+2. **Passing every check doesn't mean the drawing was read right.** Opus and Sonnet found every called-out hole on all three drawings in every run, and called out nothing extra. Haiku missed some: on FTC-10 it left out the Ø3.5 G6 fits in two runs and read them as having no tolerance in the third, and it skipped some Ø6 and counterbore callouts. All of those plans passed validation and the safety checks. They should: validation can only check the callouts it's given, and a missed fit makes a hole look like plain drilling. Here the G6 holes were left out either way, since there's no 3.5 mm reamer. On a part where the reamer exists, a missed fit is a hole drilled when it should be reamed: a scrapped part that every check passes. Only the comparison with the hand-written answers catches it.
+3. **Sonnet 5.5 matched Opus here at 41% of the cost and about half the time.** FTC-10 with its drawing took 34 s on Sonnet against 81 s on Opus. Haiku costs a twenty-fifth as much as Opus but isn't faster, and it misreads drawings.
+4. **Plans are stable.** Where an Opus plan differed between runs, it only grouped the spot drills differently.
+
+What it means: Sonnet 5.5 is the likely default, but 3 runs per part can only show large differences, so a 5-run sweep of Opus and Sonnet comes before switching. The model wasn't changed in the same change as the harness, so this first sweep stays the baseline.
 
 ---
 
@@ -312,14 +336,15 @@ The automated tests never call the real API. A `FakeClient` in `tests/test_plann
 - that a revision sends the current plan and the request, requires a summary, and is retried and rejected like any plan when it breaks a rule
 - the full API flow (`tests/test_api.py`): a good plan produces G-code, a bad plan produces errors, and refusals and missing credentials give the right error codes.
 
-Live behavior is checked separately, by running real parts as above.
+Live behavior is checked separately, by running real parts as above and with the eval harness ([Measured with the eval](#measured-with-the-eval)). `tests/test_eval.py` tests the harness's scoring, also without the API.
 
 ---
 
 ## What could come next
 
 - **Compare against a rules-only planner.** For holes alone, fixed rules can produce most plans. Comparing the two on the same parts would show exactly where the model adds value.
-- **Try cheaper settings.** Validation gives an objective pass/fail, so running the test parts with Sonnet 5.5 or a lower effort setting, and counting rejections, is a cheap experiment.
+- **Switch to Sonnet 5.5** if a 5-run sweep confirms the first one, and try low effort on both.
+- **Cache the system prompt and the drawing**, and measure the saving with the eval: each plan change and retry sends the whole drawing again.
 - **Log usage per job:** tokens, time, attempts and validation errors, so cost and failure rates are visible over time.
 - **Learn from edits.** In a plant, the changes programmers make to generated plans are the best evaluation data for the prompt and the validator.
 

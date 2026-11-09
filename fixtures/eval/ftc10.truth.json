@@ -1,0 +1,8 @@
+[
+  {"callout": "three 2X M3x0.5-6g", "units": "mm", "diameter": 3, "plus": 0, "minus": 0, "thread": 0.5, "holes": 6, "needs": "tap"},
+  {"callout": "three single Ø3.5 G6", "units": "mm", "diameter": 3.5, "plus": 0.012, "minus": 0.004, "thread": 0, "holes": 3, "needs": "ream"},
+  {"callout": "Ø3.5 ±0.2", "units": "mm", "diameter": 3.5, "plus": 0.2, "minus": -0.2, "thread": 0, "holes": 3, "needs": "drill"},
+  {"callout": "Ø2.5 ±0.15", "units": "mm", "diameter": 2.5, "plus": 0.15, "minus": -0.15, "thread": 0, "holes": 8, "needs": "drill"},
+  {"callout": "Ø6 ±0.15", "units": "mm", "diameter": 6, "plus": 0.15, "minus": -0.15, "thread": 0, "holes": 4, "needs": "drill"},
+  {"callout": "counterbore Ø10 ±0.25", "units": "mm", "diameter": 10, "plus": 0.25, "minus": -0.25, "thread": 0, "holes": 4, "needs": "drill"}
+]

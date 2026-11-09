@@ -50,15 +50,18 @@ Play to a tap: it backs out with the spindle reversed. Optional: try "Skip spot 
 
 **6. How it's kept honest (3:15).**
 
-> "Three layers sit between Claude and a machine: the schema, the validator and the safety checks. As a second opinion, I ran the programs through LinuxCNC's own interpreter. Its first run caught two real portability bugs in my G-code. Now ten programs pass, with every move matching. 122 automated tests, and live runs on four real NIST parts. What isn't done yet: nothing has run on a real machine, and the speeds and feeds are conservative starting values, not checked against a tool maker's chart."
+> "Three layers sit between Claude and a machine: the schema, the validator and the safety checks. As a second opinion, I ran the programs through LinuxCNC's own interpreter. Its first run caught two real portability bugs in my G-code. Now ten programs pass, with every move matching. 137 automated tests, and live runs on four real NIST parts. And an eval: it plans seven parts three times each per model and scores every run against drawing answers I wrote by hand. That showed something the checks can't: Haiku missed tolerance callouts on a drawing and still passed every check. A valid, safe program can still be the wrong program. What isn't done yet: nothing has run on a real machine, and the speeds and feeds are conservative starting values, not checked against a tool maker's chart."
 
 ## Likely questions
 
 **What if Claude is wrong?**
-It has been, and the layers caught it. On one NIST part its first plan failed validation, and the retry with the errors listed fixed it. Claude can't name a tool that doesn't exist (the schema), can't skip spotting or pecking (the validator), and never provides speeds or feeds. One more thing worth saying: on FTC-10 it gave a wrong *reason* for leaving holes out, even though leaving them out was right. The reason text isn't validated, so it's for a person to read critically.
+It has been, and the layers caught it. In the eval, a quarter to a third of first plans were rejected by validation, and the retry with the errors listed fixed every one. Claude can't name a tool that doesn't exist (the schema), can't skip spotting or pecking (the validator), and never provides speeds or feeds. One more thing worth saying: on FTC-10 it gave a wrong *reason* for leaving holes out, even though leaving them out was right. The reason text isn't validated, so it's for a person to read critically.
 
 **What does it cost, and how fast is it?**
 About $0.03 and 10–15 s for a simple part, about $0.10 for a 16-hole real part, and $0.12–0.25 with a drawing (37–95 s). That's measured, with tokens recorded, in `docs/AI-IN-HOLE-CAM.md`.
+
+**How do you know a prompt or model change didn't make it worse?**
+`scripts/eval.py` re-runs the planner on seven parts, several times per model setting, and prints a scorecard: valid first try, valid after the retry, passed the checks, drawing callouts found, same plan each run, cost and time. The last sweep cost $3.29 for 63 plans. It found that Sonnet 5.5 matched Opus at 41% of the cost and half the time. I haven't switched yet: three runs per part only shows big differences, so a five-run sweep comes first.
 
 **Why not just rules?**
 For holes alone, rules could produce most plans, and comparing the two is on the next-steps list. Where the model earned its place in these runs: reading drawings with no text layer, recognizing counterbores from coaxial holes, noticing that 6.8 and 5.0 mm are tap-drill sizes, flagging a thread class meant for external threads, and taking plain-English changes. The rules still exist. They're in the validator.
@@ -67,7 +70,7 @@ For holes alone, rules could produce most plans, and comparing the two is on the
 The output is Fanuc-style, and it's been read by LinuxCNC's interpreter. A real shop needs a post-processor per machine, measured tool lengths, its own tool library and its own speeds and feeds. Those are data files and one module, not a rewrite.
 
 **What would you do next week?**
-Prove a program out on a real machine with a machinist. Log the edits programmers make to generated plans, since that's the best test data for the prompt and the validator. Then let drawing tolerances choose drills: today a drill must match the model within 0.02 mm, even when a nearby drill lands inside the tolerance.
+Prove a program out on a real machine with a machinist. Run a five-run eval to decide on Sonnet, then cache the prompt and drawing and measure the saving with the same eval. Log the edits programmers make to generated plans, since that's the best test data for the prompt and the validator. Then let drawing tolerances choose drills: today a drill must match the model within 0.02 mm, even when a nearby drill lands inside the tolerance.
 
 **How was it built?**
 Over a weekend, with Claude Code as a pair programmer. Each stage got its tests before the next began, and the AI's code was checked the same way the AI's plans are. Live runs and real parts found bugs the tests didn't, and each one is written up in `docs/REAL-PARTS.md`.

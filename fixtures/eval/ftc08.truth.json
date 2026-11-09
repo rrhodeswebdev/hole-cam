@@ -1,0 +1,7 @@
+[
+  {"callout": "10X Ø.213 +.005 -.001", "units": "in", "diameter": 0.213, "plus": 0.005, "minus": -0.001, "thread": 0, "holes": 10, "needs": "drill"},
+  {"callout": "2X Ø.238 +.005 -.001, and two single Ø.238 +.005 -.001", "units": "in", "diameter": 0.238, "plus": 0.005, "minus": -0.001, "thread": 0, "holes": 4, "needs": "drill"},
+  {"callout": "2X Ø.250 +.006 -.001", "units": "in", "diameter": 0.25, "plus": 0.006, "minus": -0.001, "thread": 0, "holes": 2, "needs": "drill"},
+  {"callout": "two single Ø.228 +.005 -.001", "units": "in", "diameter": 0.228, "plus": 0.005, "minus": -0.001, "thread": 0, "holes": 2, "needs": "drill"},
+  {"callout": "two single Ø.242 +.005 -.001", "units": "in", "diameter": 0.242, "plus": 0.005, "minus": -0.001, "thread": 0, "holes": 2, "needs": "drill"}
+]

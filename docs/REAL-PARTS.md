@@ -78,7 +78,7 @@ I ran the full pipeline live on the four parts the library can mostly drill: pla
 
 What Claude got right without being told:
 - **FTC-07:** recognized the counterbores from the coaxial holes. It cut them before the holes beneath, and warned that a drill leaves a cone-shaped floor where a screw head needs a flat seat.
-- **FTC-08:** the 8 holes no library drill fits are Ø.228", .238" and .242", the sizes of #1, B and C drills, which the library doesn't have. Claude named a reamer, a boring bar or the right drill for each. (The library has since gained a 5.8 mm drill, which fits the Ø.228" holes. An earlier version of this page said these were the holes the drawing tolerances tightly. That was wrong: the drawing gives all 20 holes the same +.005/−.001", which a drill can hold.)
+- **FTC-08:** the 8 holes no library drill fits are Ø.228", .238" and .242", the sizes of #1, B and C drills, which the library doesn't have. Claude named a reamer, a boring bar or the right drill for each. (The library has since gained a 5.8 mm drill, which fits the Ø.228" holes. An earlier version of this page said these were the holes the drawing tolerances tightly. That was wrong: the drawing gives these holes +.005/−.001", which a drill can hold, and every other hole the same except the Ø.250 pair at +.006/−.001.)
 - **FTC-09:** the plate is 3 mm thick, so it made the spot holes shallower to keep them from breaking through.
 - **FTC-10:** it read the 2.46 mm holes as M3 threads modeled at their inner diameter, and named the 2.5 mm tap drill they'd need.
 
